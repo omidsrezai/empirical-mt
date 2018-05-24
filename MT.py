@@ -1,3 +1,5 @@
+from scipy.signal import gaussian
+
 __author__ = 'osrezai'
 
 """
@@ -148,7 +150,6 @@ if __name__ == '__main__':
 
     plt.show()
     print np.array(disp_scale).shape
-    ff
     n_patches = 30000
     patches = sample_patch_params(n_patches)
 
