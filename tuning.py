@@ -43,7 +43,7 @@ class DirectionTuning(Layer):
 
     def get_config(self):
         config = {'output_dim':self.output_dim}
-        return conf
+        return config
 
 
 class SpeedTuning(Layer):
@@ -70,7 +70,7 @@ class SpeedTuning(Layer):
         super(SpeedTuning, self).build(input_shape)  # Be sure to call this somewhere!
 
     def call(self, x):        
-        speed_deg_per_second = tf.expand_dims(x[0], -1) *self.unit_conv
+        speed_deg_per_second = tf.expand_dims(x[0], -1) * self.unit_conv
         contrast = tf.expand_dims(x[1], -1)
         q = (speed_deg_per_second+self.sp_offset)/(contr_func(contrast, self.Ap, self.Bp) +self.sp_offset)
         speed_scale = tf.exp(-((tf.log(q)**2)/(2*self.sp_width**2)))
@@ -83,7 +83,7 @@ class SpeedTuning(Layer):
 
     def get_config(self):
         config = {'output_dim':self.output_dim}
-        return conf
+        return config
 
 class DisparityTuning(Layer):
     def __init__(self, output_dim, params, unit_conv,**kwargs):
@@ -118,7 +118,7 @@ class DisparityTuning(Layer):
 
     def get_config(self):
         config = {'output_dim':self.output_dim}
-        return conf
+        return config
 
 
 if __name__ == '__main__':   
@@ -135,7 +135,7 @@ if __name__ == '__main__':
     contrast = np.random.randint(0,250,(n_seq,w_,w_))
     disparity = np.random.randint(0,250,(n_seq,w_,w_))
 
-    DisparityTuning(n_channel,params)(disparity)
+    DirectionTuning(n_channel,params)(disparity)
     #direction_tuning(n_channel,params)([flow_dir, flow_speed, contrast, disparity])
 
     print 'test'
