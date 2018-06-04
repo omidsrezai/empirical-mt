@@ -33,7 +33,7 @@ if __name__ == '__main__':
         ground_truth = pd.read_csv(ground_truth_path_rel, header=None, names=['line'])
 
         ground_truth_parsed = ground_truth.apply(parse_ground_truth_line, axis=1)
-        ground_truth_parsed.set_index(keys='frame_id', inplace=True)
+        ground_truth_parsed.set_index(keys='frame_id', inplace=True, drop=False)
 
         ground_truth_parsed_path = path.join(PARSED_GROUND_TRUTH_DIR, path.basename(ground_truth_path))
 
