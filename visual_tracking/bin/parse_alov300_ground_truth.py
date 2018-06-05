@@ -10,17 +10,17 @@ def parse_ground_truth_line(l):
     vs = map(float, l['line'].split(' '))
     frame_id = int(vs[0])
 
-    v1 = (vs[1], vs[2])
-    v1 = np.flip(np.round(v1).astype(np.int), axis=0)
-
-    v2 = (vs[3], vs[4])
+    v2 = (vs[1], vs[2])
     v2 = np.flip(np.round(v2).astype(np.int), axis=0)
 
-    v3 = (vs[5], vs[6])
-    v3 = np.flip(np.round(v3).astype(np.int), axis=0)
+    v1 = (vs[3], vs[4])
+    v1 = np.flip(np.round(v1).astype(np.int), axis=0)
 
-    v4 = (vs[7], vs[8])
+    v4 = (vs[5], vs[6])
     v4 = np.flip(np.round(v4).astype(np.int), axis=0)
+
+    v3 = (vs[7], vs[8])
+    v3 = np.flip(np.round(v3).astype(np.int), axis=0)
 
     return pd.Series({'frame_id': frame_id, 'v1': v1, 'v2': v2, 'v3': v3, 'v4': v4})
 
