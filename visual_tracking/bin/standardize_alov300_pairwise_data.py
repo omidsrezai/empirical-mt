@@ -41,7 +41,7 @@ def _center_on_bounding_box_and_crop(f1_ann, f2_ann):
     f1_center = (f1_box_v1 + f1_box_v3) / 2
 
     f1_cropped_start = f1_center - (FIXED_SIZE / 2)
-    f1_cropped_end = f1_center + (FIXED_SIZE / 2)
+    f1_cropped_end = f1_center + (FIXED_SIZE / 2) - 1
 
     rr, cc = draw.rectangle(f1_cropped_start, f1_cropped_end)
 
@@ -52,6 +52,9 @@ def _center_on_bounding_box_and_crop(f1_ann, f2_ann):
     f2_cropped = f2_ann_padded[rr, cc, :]
     f2_cropped = np.fliplr(f2_cropped)
     f2_cropped = transform.rotate(f2_cropped, 90)
+
+    # make sure that the dimension is FIXED_SIZE x FIXED_SIZE
+    assert (f1_cropped.shape[0:2] == (FIXED_SIZE, FIXED_SIZE)) and (f2_cropped.shape[0:2] == (FIXED_SIZE, FIXED_SIZE))
 
     return f1_cropped, f2_cropped
 
@@ -114,10 +117,14 @@ def _process_record(r):
     f2_pathname = path.join(save_dir, video_name, frame_id, 'frame.png')
     # save frames
     makedirs(path.join(save_dir, video_name, frame_id))
-    f1 = img_as_uint(f1)
-    f2 = img_as_uint(f2)
-    io.imsave(f1_pathname, f1)
-    io.imsave(f2_pathname, f2)
+    try:
+        f1 = img_as_uint(f1)
+        f2 = img_as_uint(f2)
+        io.imsave(f1_pathname, f1)
+        io.imsave(f2_pathname, f2)
+    except:
+        rmtree(path.join(save_dir, video_name, frame_id))
+        raise
 
     return frame_id, video_name
 
