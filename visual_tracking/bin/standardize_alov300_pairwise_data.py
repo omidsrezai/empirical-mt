@@ -2,7 +2,7 @@ from itertools import chain
 from multiprocessing import Pool, cpu_count
 from shutil import rmtree
 
-from skimage import transform, util, draw, io, img_as_uint
+from skimage import transform, util, draw, io, img_as_ubyte, color
 import numpy as np
 from os import path, mkdir, makedirs
 import pandas as pd
@@ -10,8 +10,9 @@ from tqdm import tqdm
 
 FIXED_SIZE = 78
 OBJ_PATCH_RATIO = 0.3
+SAMPLE_FRAC = 0.01
 
-dataset_name = 'pairwise_size%s_ratio%s_grayscale' % (FIXED_SIZE, OBJ_PATCH_RATIO)
+dataset_name = 'pairwise_frac%s_size%s_ratio%s_grayscale' % (SAMPLE_FRAC, FIXED_SIZE, OBJ_PATCH_RATIO)
 save_dir = path.join('../../data/alov300++', dataset_name)
 
 
@@ -89,7 +90,7 @@ def _process_df_chunk(df):
 
     for _, r in tqdm(df.iterrows()):
         try:
-            frame_id, video_name = _process_record(r)
+            frame_id, video_name, box1, box2 = _process_record(r)
 
         except:
             print('error processing %s' % r['f2_filepath'])
@@ -99,14 +100,21 @@ def _process_df_chunk(df):
                                               'feature_dir': path.join('data/alov300++', dataset_name, video_name,
                                                                        frame_id),
                                               'video_id': video_name,
-                                              'frame_id': int(frame_id)})
+                                              'frame_id': int(frame_id),
+                                              'box1': box1,
+                                              'box2': box2})
 
     return pairwise_standardized_df_rows
 
+def _read_img_as_gray(p):
+    img = io.imread(p, as_gray=True)
+    return img
+
 
 def _process_record(r):
-    f1 = io.imread(path.join('../../', r['f1_filepath']), as_gray=True)
-    f2 = io.imread(path.join('../../', r['f2_filepath']), as_gray=True)
+    f1 = _read_img_as_gray(path.join('../../', r['f1_filepath']))
+    f2 = _read_img_as_gray(path.join('../../', r['f2_filepath']))
+
     f1_ann = np.array(r['f1_ann'])
     f2_ann = np.array(r['f2_ann'])
     # preprocess frames and annotations
@@ -118,15 +126,15 @@ def _process_record(r):
     # save frames
     makedirs(path.join(save_dir, video_name, frame_id))
     try:
-        f1 = img_as_uint(f1)
-        f2 = img_as_uint(f2)
+        f1 = img_as_ubyte(f1)
+        f2 = img_as_ubyte(f2)
         io.imsave(f1_pathname, f1)
         io.imsave(f2_pathname, f2)
     except:
         rmtree(path.join(save_dir, video_name, frame_id))
         raise
 
-    return frame_id, video_name
+    return frame_id, video_name, box1, box2
 
 
 if __name__ == '__main__':
@@ -140,7 +148,7 @@ if __name__ == '__main__':
 
     pool = Pool(cpu_count() - 1)
     results = pool.map(_process_df_chunk,
-                       np.array_split(pairwise_df, cpu_count() - 1))
+                       np.array_split(pairwise_df.sample(frac=SAMPLE_FRAC), cpu_count() - 1))
 
     pairwise_std_df = pd.DataFrame(list(chain.from_iterable(results)))
     pairwise_std_df.to_json(path.join(save_dir, 'index.json'), orient='records')
