@@ -1,0 +1,7 @@
+*.pyc
+serialized_models/
+notebooks/
+.idea
+data
+input
+venv

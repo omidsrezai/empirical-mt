@@ -97,8 +97,7 @@ def _process_df_chunk(df):
             continue
 
         pairwise_standardized_df_rows.append({'video_category': r['category'],
-                                              'feature_dir': path.join('data/alov300++', dataset_name, video_name,
-                                                                       frame_id),
+                                              'feature_dir': path.join(video_name, frame_id),
                                               'video_id': video_name,
                                               'frame_id': int(frame_id),
                                               'box1': box1,
