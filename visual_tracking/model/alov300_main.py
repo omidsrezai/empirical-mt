@@ -22,9 +22,12 @@ params = MT.sample_tuning_params(n_channel, pref_log_speed_range=(0,4))
 def nn_model_fn(features, labels, mode):
     # input layers
     with tf.variable_scope("mt_inputs"):
-        speed_input_layer = tf.reshape(features['speed'], [-1, 78, 78], name='speed_input_tensor')
-        direction_input_layer = tf.reshape(features['direction'], [-1, 78, 78], name='direction_input_tensor')
-        contrast_input_layer = tf.reshape(features['contrast'], [-1, 78, 78], name='contrast_input_tensor')
+        speed_input_layer = tf.reshape(features['speed'], [-1, 78, 78, 1], name='speed_input_tensor')
+        tf.summary.image('speed_input', speed_input_layer)
+        tf.summary.histogram('speed_input', speed_input_layer)
+        direction_input_layer = tf.reshape(features['direction'], [-1, 78, 78, 1], name='direction_input_tensor')
+        contrast_input_layer = tf.reshape(features['contrast'], [-1, 78, 78, 1], name='contrast_input_tensor')
+        tf.summary.image('contrast_input', contrast_input_layer)
 
     # bounding box of the previous frame
     prev_bbox_input_layer = tf.reshape(features['prev_bbox'], [-1, 4])
@@ -38,14 +41,15 @@ def nn_model_fn(features, labels, mode):
                                           name='direction_tunning')(direction_input_layer)
 
     with tf.variable_scope("mt_activity"):
-        mt_feat = tf.multiply(speed_tun_layer, direction_tun_layer, name='MT_act_tensor')
-        mt_feat = tf.where(tf.is_nan(mt_feat), tf.zeros_like(mt_feat), mt_feat)
+        mt_act = tf.multiply(speed_tun_layer, direction_tun_layer, name='MT_act_tensor')
+        mt_act = tf.where(tf.is_nan(mt_act), tf.zeros_like(mt_act), mt_act)
+        tf.summary.histogram('activations', mt_act)
 
     # visual tracking network
-    mt_feat_flat = tf.reshape(mt_feat, [-1, 78 * 78 * n_channel], name='flattened_MT_act_tensor')
-    concat = tf.concat([mt_feat_flat, prev_bbox_input_layer], axis=1)
+    mt_act_flat = tf.reshape(mt_act, [-1, 78 * 78 * n_channel], name='flattened_MT_act_tensor')
+    concat = tf.concat([mt_act_flat, prev_bbox_input_layer], axis=1)
 
-    dense = tf.layers.dense(inputs=concat, units=4)
+    dense = tf.layers.dense(inputs=concat, units=4, name='dense_layer')
 
     # reshape it two 2 coordinates
     predictions = tf.reshape(dense, [-1, 2, 2], name='bbox_tensor')

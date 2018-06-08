@@ -6,8 +6,8 @@ from tqdm import tqdm
 from pelic.calculate_contrast import CalculateContrast
 from pelic.gabors import makeGabors, makeGaussian
 
-FIXED_FRAME_SIZE = 78
-DATASET_DIR = '../../data/alov300++/pairwise_frac0.01_size78_ratio0.3_grayscale' # TODO make this an argument
+FIXED_FRAME_SIZE = 76
+DATASET_DIR = '../../data/alov300++/pairwise_train_frac1_size76_ratio0.3_grayscale' # TODO make this an argument
 
 size_ = 101
 gabors = makeGabors(size_, center=None)
@@ -18,7 +18,7 @@ contrast_calculator = CalculateContrast(gabors, gaussian)
 def _compute_contrast_in_chunk(video_dir_path):
     frame_folders = listdir(video_dir_path)
 
-    video = np.zeros((FIXED_FRAME_SIZE, FIXED_FRAME_SIZE, max(2, len(frame_folders))), dtype=np.uint8)
+    video = np.zeros((max(2, len(frame_folders)), FIXED_FRAME_SIZE, FIXED_FRAME_SIZE), dtype=np.uint8)
 
     # read frames
     for i, f in enumerate(frame_folders):
@@ -32,13 +32,13 @@ def _compute_contrast_in_chunk(video_dir_path):
         # checking the frame size
         assert frame.shape == (FIXED_FRAME_SIZE, FIXED_FRAME_SIZE)
 
-        video[:, :, i] = frame
+        video[i, :, :] = frame
 
     # compute contrast
     contrasts = contrast_calculator.calculate_contrast(video, is_smoothed=False)
 
     for i, f in enumerate(frame_folders):
-            c = contrasts[:, :, i]
+            c = contrasts[i, :, :]
             np.save(path.join(video_dir_path, f, 'contrast'), c)
 
 

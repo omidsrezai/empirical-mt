@@ -8,11 +8,16 @@ from os import path, mkdir, makedirs
 import pandas as pd
 from tqdm import tqdm
 
-FIXED_SIZE = 78
-OBJ_PATCH_RATIO = 0.3
-SAMPLE_FRAC = 0.01
+PAIRWISE_DF_DIR = '../../data/alov300++/'
+PAIRWISE_DF_NAME = 'pairwise_train'
 
-dataset_name = 'pairwise_frac%s_size%s_ratio%s_grayscale' % (SAMPLE_FRAC, FIXED_SIZE, OBJ_PATCH_RATIO)
+FIXED_SIZE = 76
+OBJ_PATCH_RATIO = 0.3
+SAMPLE_FRAC = 1
+
+
+
+dataset_name = '%s_frac%s_size%s_ratio%s_grayscale' % (PAIRWISE_DF_NAME, SAMPLE_FRAC, FIXED_SIZE, OBJ_PATCH_RATIO)
 save_dir = path.join('../../data/alov300++', dataset_name)
 
 
@@ -23,8 +28,8 @@ def _rescale_on_bounding_box(f1_ann, f2_ann):
 
     scale = FIXED_SIZE * OBJ_PATCH_RATIO / box_size
 
-    f1_ann_rescaled = transform.rescale(f1_ann, scale)
-    f2_ann_resaled = transform.rescale(f2_ann, scale)
+    f1_ann_rescaled = transform.rescale(f1_ann, scale, order=3)
+    f2_ann_resaled = transform.rescale(f2_ann, scale, order=3)
 
     return f1_ann_rescaled, f2_ann_resaled
 
@@ -137,7 +142,7 @@ def _process_record(r):
 
 
 if __name__ == '__main__':
-    pairwise_df = pd.read_json('../../data/alov300++/pairwise.json')
+    pairwise_df = pd.read_json(path.join(PAIRWISE_DF_DIR, '%s.json' % PAIRWISE_DF_NAME))
 
     if path.exists(save_dir):
         print('removing %s' % save_dir)

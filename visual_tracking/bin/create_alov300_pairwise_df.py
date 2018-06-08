@@ -6,7 +6,7 @@ from tqdm import tqdm
 PARSED_GROUND_TRUTH_DIR = '../../data/alov300++/ground_truth'
 
 if __name__ == '__main__':
-    alov300_df = pd.read_csv('../../data/alov300++/alov300.csv')
+    alov300_df = pd.read_csv('../../data/alov300++/alov300_train.csv')
     alov300_pairwise_cols = ['f1_filepath', 'f2_filepath', 'f1_ann', 'f2_ann', 'video_path', 'video_name', 'category']
     alov300_pairwise_df = pd.DataFrame(columns=alov300_pairwise_cols)
 
