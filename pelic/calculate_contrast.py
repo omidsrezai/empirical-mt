@@ -134,7 +134,7 @@ if __name__ == '__main__':
     CC = CalculateContrast(gabors,gaussian)
 
     for i in range(1*1):
-        a = imread('1.bmp', flatten=True)
+        a = imread('../data/alov300++/pairwise_frac0.01_size78_ratio0.3_grayscale/01-Light_video00001/00000091/frame.png', flatten=True)
         #a = imread('2.png', flatten=True)
     
         plt.imshow(a,cmap='gray')
@@ -150,7 +150,7 @@ if __name__ == '__main__':
         for i in range(1*1):            
             result = CC.calculate_contrast(aa, is_smoothed=False)
             print result.shape
-            plt.imshow(result,cmap='gray')            
+            plt.imshow(result[0, :, :],cmap='gray')
             print i
             plt.show()
 
