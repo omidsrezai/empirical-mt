@@ -35,7 +35,9 @@ class ALOV300ModelFn(object):
 
         # visual tracking network
         with tf.variable_scope('tracker_nn'):
-            mt_act_flat = tf.reshape(mt_act, [-1, FIXED_FRAME_SIZE * FIXED_FRAME_SIZE * self.n_chann], name='flattened_mt_act_tensor')
+            mt_act_mean = tf.reduce_mean(mt_act, axis=3)
+            mt_act_flat = tf.reshape(mt_act_mean, [-1, FIXED_FRAME_SIZE * FIXED_FRAME_SIZE * 1],
+                                     name='flattened_mt_act_tensor')
             concat = tf.concat([mt_act_flat, prev_bbox_input_layer], axis=1)
 
             dense = tf.layers.dense(inputs=concat, units=4, name='dense_layer')
@@ -72,16 +74,18 @@ class ALOV300ModelFn(object):
     def _mt_model(self, contrast_input_layer, direction_input_layer, speed_input_layer):
         with tf.variable_scope('mt_model'):
 
-            speed_tun_layer = SpeedTuning(64, self.mt_params, 100. / 50 * 25 * 5, name='speed_tunning')
+            speed_tun_layer = SpeedTuning(64, self.mt_params, 100. / 50 * 25 * 5 * 10, name='speed_tunning')
             direction_tun_layer = DirectionTuning(64, self.mt_params, name='direction_tunning')
             speed_tun_layer = speed_tun_layer([speed_input_layer, contrast_input_layer])
             direction_tun_layer = direction_tun_layer(direction_input_layer)
 
             # visualize speeding tuning and direction tuning
+            tf.summary.histogram("speed_tuning", speed_tun_layer)
             speed_tun_layer_images = tf.reshape(tf.reduce_mean(speed_tun_layer, axis=3),
                                                 [-1, FIXED_FRAME_SIZE, FIXED_FRAME_SIZE, 1])
             tf.summary.image('speed_tun', speed_tun_layer_images)
 
+            tf.summary.histogram("direction_tuning", direction_tun_layer)
             direction_tun_images = tf.reshape(tf.reduce_mean(direction_tun_layer, axis=3),
                                               [-1, FIXED_FRAME_SIZE, FIXED_FRAME_SIZE, 1])
             tf.summary.image('direction_tun', direction_tun_images)

@@ -21,10 +21,10 @@ def main(args):
 
     model_name = tf.estimator.Estimator(model_fn, model_dir=model_dir)
 
-    tensors_to_log = {"speed": 'mt_inputs/speed_input_tensor',
-                      'direction': 'mt_inputs/direction_input_tensor',
-                      "MT_feats": "tracker_nn/flattened_mt_act_tensor",
-                      "dense": 'tracker_nn/dense_layer/BiasAdd'}
+    tensors_to_log = {#"speed": 'mt_inputs/speed_input_tensor',
+                      #'direction': 'mt_inputs/direction_input_tensor',
+                      "MT_feats": "tracker_nn/flattened_mt_act_tensor"}
+                      #"dense": 'tracker_nn/dense_layer/BiasAdd'}
     logging_hook = tf.train.LoggingTensorHook(
         tensors=tensors_to_log, every_n_iter=50)
 
