@@ -14,7 +14,7 @@ tf_sess = tf.Session()
 K.set_session(tf_sess)
 
 
-class ALOV300ModelFn(object):
+class ALOV300OmideMTModelFn(object):
 
     def __init__(self, mt_params_path):
         self.mt_params = pickle.load(open(mt_params_path, "rb"))
@@ -34,7 +34,7 @@ class ALOV300ModelFn(object):
         mt_act = self._mt_model(contrast_input_layer, direction_input_layer, speed_input_layer)
 
         # visual tracking network
-        with tf.variable_scope('tracker_nn'):
+        with tf.variable_scope('tracker_nn') as scope:
             mt_act_mean = tf.reduce_mean(mt_act, axis=3)
             mt_act_flat = tf.reshape(mt_act_mean, [-1, FIXED_FRAME_SIZE * FIXED_FRAME_SIZE * 1],
                                      name='flattened_mt_act_tensor')
@@ -49,6 +49,13 @@ class ALOV300ModelFn(object):
 
             # reshape bounding box to 2x2
             output = tf.reshape(dense, [-1, 2, 2], name='bbox_scaled')
+
+            # plot weight matrix
+            scope.reuse_variables()
+            dense_kernel = tf.get_variable('dense_layer/kernel')
+            dense_kernel_mt_w = tf.reduce_mean(tf.abs(tf.slice(dense_kernel, [0, 0], [5776, 4])))
+            dense_kernel_prev_bbox_w = tf.reduce_mean(tf.abs(tf.slice(dense_kernel, [5776, 0], [4, 4])))
+            tf.summary.scalar('prev_bbox_over_mt_w', dense_kernel_prev_bbox_w / dense_kernel_mt_w)
 
         # PREDICT mode
         if mode == tf.estimator.ModeKeys.PREDICT:
@@ -115,8 +122,11 @@ class ALOV300ModelFn(object):
                 tf.summary.histogram('activations', mt_act)
 
                 mt_act_mean = tf.reduce_mean(mt_act, axis=3)
+                mt_act_max = tf.reduce_max(mt_act, axis=3)
                 mt_act_mean = tf.reshape(mt_act_mean, [-1, FIXED_FRAME_SIZE, FIXED_FRAME_SIZE, 1])
+                mt_act_max = tf.reshape(mt_act_max, [-1, FIXED_FRAME_SIZE, FIXED_FRAME_SIZE, 1])
                 tf.summary.image('mt_activities_mean', mt_act_mean)
+                tf.summary.image('mt_activities_max', mt_act_max)
 
         return mt_act
 

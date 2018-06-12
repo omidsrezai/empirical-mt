@@ -4,7 +4,7 @@ from time import time
 import tensorflow as tf
 
 from visual_tracking.model.alov300_input_pipeline import PairwiseVideoFrameInputFunc
-from visual_tracking.model.alov300_main import ALOV300ModelFn
+from visual_tracking.model.alov300_model_omid_mt import ALOV300OmideMTModelFn
 
 DATASET_DIR = '../../data/alov300++/pairwise_train_frac1_size76_ratio0.3_grayscale'  # TODO make this an input
 
@@ -17,7 +17,7 @@ def main(args):
     timestamp = datetime.fromtimestamp(time()).strftime('%m-%d-%H-%M-%S')
     model_dir = '../../models/alov300/%s' % timestamp
 
-    model_fn = ALOV300ModelFn(mt_params_path='../../params_MT_654.pkl')
+    model_fn = ALOV300OmideMTModelFn(mt_params_path='../../params_MT_654.pkl')
 
     model_name = tf.estimator.Estimator(model_fn, model_dir=model_dir)
 
