@@ -59,6 +59,23 @@ class ALOV300ModelFn(object):
         with tf.variable_scope('ground_truth_bbox'):
             labels_rescaled = labels / (FIXED_FRAME_SIZE - 1)
 
+        with tf.variable_scope('metrics'):
+            p_offsets_in_pixels = features['prev_bbox'] - (output * (FIXED_FRAME_SIZE - 1))
+            p_offsets_mean = tf.reduce_mean(p_offsets_in_pixels)
+            p_offsets_var = tf.reduce_mean(tf.square(p_offsets_in_pixels - p_offsets_mean))
+            tf.summary.scalar('predicted_offset_mean', p_offsets_mean)
+            tf.summary.scalar('predicted_offset_var', p_offsets_var)
+
+            t_offsets_in_pixels = features['prev_bbox'] - labels
+            t_offsets_mean = tf.reduce_mean(t_offsets_in_pixels)
+            t_offset_var = tf.reduce_mean(tf.square(t_offsets_in_pixels - t_offsets_mean))
+
+            offsets_covar = tf.reduce_mean((t_offsets_in_pixels - t_offsets_mean) *
+                                           (p_offsets_in_pixels - p_offsets_mean))
+            tf.summary.scalar('true_offset_mean', t_offsets_mean)
+            tf.summary.scalar('true_offset_var', t_offset_var)
+            tf.summary.scalar('offsets_covariance', offsets_covar)
+
         loss = tf.losses.absolute_difference(labels=labels_rescaled, predictions=output)
 
         # TRAIN mode

@@ -35,7 +35,7 @@ def _compute_contrast_in_chunk(video_dir_path):
         video[i, :, :] = frame
 
     # compute contrast
-    contrasts = contrast_calculator.calculate_contrast(video, is_smoothed=False)
+    contrasts = contrast_calculator.calculate_contrast(video, is_smoothed=True)
 
     for i, f in enumerate(frame_folders):
             c = contrasts[i, :, :]
