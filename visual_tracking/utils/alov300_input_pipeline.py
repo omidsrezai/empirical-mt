@@ -7,7 +7,7 @@ import tensorflow as tf
 import scipy.io as sio
 
 
-class PairwiseVideoFrameInputFunc(object):
+class PairwiseVideoFrameInputFuncBase(object):
 
     def __init__(self, dataset_dir,
                  batch_size=64,
@@ -44,29 +44,9 @@ class PairwiseVideoFrameInputFunc(object):
 
         return h_flow, v_flow, contrast, prev_bbox, bbox, prev_frame, frame
 
+    # abstract method
     def _parse(self, h_flow, v_flow, contrast, prev_bbox, bbox, prev_frame, frame):
-        h_flow.set_shape([self.fixed_frame_size, self.fixed_frame_size])
-        v_flow.set_shape([self.fixed_frame_size, self.fixed_frame_size])
-        contrast.set_shape([self.fixed_frame_size, self.fixed_frame_size])
-        prev_bbox.set_shape([2, 2])
-        bbox.set_shape([2, 2])
-
-        prev_frame.set_shape([self.fixed_frame_size, self.fixed_frame_size])
-        prev_frame = tf.reshape(prev_frame, [self.fixed_frame_size, self.fixed_frame_size, 1])
-        frame.set_shape([self.fixed_frame_size, self.fixed_frame_size])
-        frame = tf.reshape(frame, [self.fixed_frame_size, self.fixed_frame_size, 1])
-
-        # convert cart to polar coordinates
-        speed = tf.sqrt(tf.square(h_flow) + tf.square(v_flow))
-        direction = tf.atan(v_flow / h_flow)
-        direction = tf.where(tf.is_nan(direction), tf.zeros_like(direction), direction)
-
-        return {'speed': speed,
-                'direction': direction,
-                'contrast': contrast,
-                'prev_bbox': prev_bbox,
-                'prev_frame': prev_frame,
-                'frame': frame}, bbox
+        raise NotImplementedError
 
     def __call__(self):
         pairwise_video_frame_df = pd.read_json(path.join(self.dataset_dir, 'index.json'))
@@ -96,3 +76,31 @@ class PairwiseVideoFrameInputFunc(object):
               (pairwise_frame_dataset.output_shapes, pairwise_frame_dataset.output_types))
 
         return features, labels
+
+
+
+class PairwiseVideoFrameMTInputFunc(PairwiseVideoFrameInputFuncBase):
+
+    def _parse(self, h_flow, v_flow, contrast, prev_bbox, bbox, prev_frame, frame):
+        h_flow.set_shape([self.fixed_frame_size, self.fixed_frame_size])
+        v_flow.set_shape([self.fixed_frame_size, self.fixed_frame_size])
+        contrast.set_shape([self.fixed_frame_size, self.fixed_frame_size])
+        prev_bbox.set_shape([2, 2])
+        bbox.set_shape([2, 2])
+
+        prev_frame.set_shape([self.fixed_frame_size, self.fixed_frame_size])
+        prev_frame = tf.reshape(prev_frame, [self.fixed_frame_size, self.fixed_frame_size, 1])
+        frame.set_shape([self.fixed_frame_size, self.fixed_frame_size])
+        frame = tf.reshape(frame, [self.fixed_frame_size, self.fixed_frame_size, 1])
+
+        # convert cart to polar coordinates
+        speed = tf.sqrt(tf.square(h_flow) + tf.square(v_flow))
+        direction = tf.atan(v_flow / h_flow)
+        direction = tf.where(tf.is_nan(direction), tf.zeros_like(direction), direction)
+
+        return {'speed': speed,
+                'direction': direction,
+                'contrast': contrast,
+                'prev_bbox': prev_bbox,
+                'prev_frame': prev_frame,
+                'frame': frame}, bbox
