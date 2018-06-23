@@ -142,6 +142,8 @@ class EstimatorOpticFlowInputFunc(PairwiseInputFuncBase):
         direction = tf.where(tf.is_nan(direction), tf.zeros_like(direction), direction)
 
         return {
+            'frame1': frame1,
+            'frame2': frame2,
             'speed': speed,
             'direction': direction,
             'box': box1

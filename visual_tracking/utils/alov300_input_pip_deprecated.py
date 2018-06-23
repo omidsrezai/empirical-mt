@@ -81,7 +81,7 @@ class PairwiseVideoFrameInputFuncBase(object):
         pairwise_frame_dataset = pairwise_frame_dataset.map(self._parse)
 
         # make iterator
-        # pairwise_frame_dataset = pairwise_frame_dataset.shuffle(buffer_size=self.shuffle_bsize)
+        pairwise_frame_dataset = pairwise_frame_dataset.shuffle(buffer_size=self.shuffle_bsize)
         pairwise_frame_dataset = pairwise_frame_dataset.batch(self.batch_size)
         pairwise_frame_dataset = pairwise_frame_dataset.repeat(self.num_epochs)
 
