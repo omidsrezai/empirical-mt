@@ -15,7 +15,7 @@ class PairwiseInputFuncBase(object):
                  input_path='../',
                  batch_size=64,
                  num_epochs=-1,
-                 shuffle_buffer_size=8196,
+                 shuffle_buffer_size=500,
                  n_workers=10,
                  prefetch_buffer_size=300):
         self.batch_size = batch_size
@@ -91,6 +91,11 @@ class PairwiseInputFuncBase(object):
         frame1 = img_as_float32(io.imread(f1_filepath))
         frame2 = img_as_float32(io.imread(f2_filepath))
 
+        # convert gray scale frame to rgb
+        if len(frame1.shape) == 2:
+            frame1 = color.gray2rgb(frame1)
+            frame2 = color.gray2rgb(frame2)
+
         return frame1, frame2, bounding_box1, bounding_box2
 
     def _compute_optic_flow_contrast_pyfunc(self, frame1, frame2):
@@ -126,7 +131,6 @@ class PairwiseInputFuncBase(object):
                                                      self._pairwise_group_frames_pyfunc,
                                                      [video_path, annotation_path, h, w],
                                                      [tf.string, tf.string, tf.float32, tf.float32]))))\
-            .shuffle(buffer_size=10000)\
             .map(lambda f1_filepath, f2_filepath, box1, box2:
                                             tuple(tf.py_func(
                                                 self._read_frames_pyfunc,
@@ -137,7 +141,7 @@ class PairwiseInputFuncBase(object):
         # apply addtional pre-processing
         pairwise_dataset = self.parse(pairwise_dataset)
 
-        pairwise_dataset = pairwise_dataset.cache()\
+        pairwise_dataset = pairwise_dataset.cache(filename='../../tmp')\
             .repeat(self.num_epochs)\
             .batch(self.batch_size)\
             .prefetch(2)
