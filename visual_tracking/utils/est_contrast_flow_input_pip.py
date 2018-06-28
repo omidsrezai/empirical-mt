@@ -138,8 +138,7 @@ class EstimatorOpticFlowInputFunc(PairwiseInputFuncBase):
         flow_y = tf.squeeze(tf.slice(flow, [0, 0, 1], [self.fixed_input_dim, self.fixed_input_dim, 1]))
 
         speed = tf.norm(flow, ord=2, axis=2)
-        direction = tf.atan(flow_y / flow_x)
-        direction = tf.where(tf.is_nan(direction), tf.zeros_like(direction), direction)
+        direction = tf.atan2(flow_y, flow_x)
 
         return {
             'frame1': frame1,

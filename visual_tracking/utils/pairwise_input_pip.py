@@ -12,6 +12,7 @@ class PairwiseInputFuncBase(object):
 
     def __init__(self,
                  dataset_index_filepath,
+                 cache_suffix,
                  input_path='../',
                  batch_size=64,
                  num_epochs=-1,
@@ -25,6 +26,7 @@ class PairwiseInputFuncBase(object):
         self.input_path = input_path
         self.n_workers = n_workers
         self.prefetch_buffer_size=prefetch_buffer_size
+        self.cache_suffix = cache_suffix
 
     def _pairwise_group_frames_pyfunc(self, video_folderpath, annotation_filepath, height, width):
 
@@ -125,6 +127,8 @@ class PairwiseInputFuncBase(object):
         pairwise_dataset = tf.data.Dataset.from_tensor_slices((video_paths, annotation_paths, frame_heights, frame_widths))
         print(pairwise_dataset)
 
+        #TODO shuffle after flat map
+
         pairwise_dataset = pairwise_dataset\
             .flat_map(lambda video_path, annotation_path, h, w:
                                                  tf.data.Dataset.from_tensor_slices(tuple(tf.py_func(
@@ -141,7 +145,8 @@ class PairwiseInputFuncBase(object):
         # apply addtional pre-processing
         pairwise_dataset = self.parse(pairwise_dataset)
 
-        pairwise_dataset = pairwise_dataset.cache(filename='../../tmp')\
+        pairwise_dataset = pairwise_dataset.cache(filename='../../dataset_cache%s' % self.cache_suffix)\
+            .shuffle(buffer_size=2000)\
             .repeat(self.num_epochs)\
             .batch(self.batch_size)\
             .prefetch(2)
