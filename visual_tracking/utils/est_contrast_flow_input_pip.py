@@ -3,15 +3,18 @@ import numpy as np
 import tensorflow as tf
 from skimage import transform, img_as_ubyte, color, util
 
+import pyflow
+
 from visual_tracking.utils.pairwise_input_pip import PairwiseInputFuncBase
 
 
 class EstimatorOpticFlowInputFunc(PairwiseInputFuncBase):
 
-    def __init__(self, mode=tf.estimator.ModeKeys.TRAIN, k=2, fixed_input_dim=200, **kwargs):
+    def __init__(self, mode=tf.estimator.ModeKeys.TRAIN, flow_method='c2f', k=2, fixed_input_dim=200, **kwargs):
         self.mode = mode
         self.k = k
         self.fixed_input_dim = fixed_input_dim
+        self.flow_method = flow_method
         super(EstimatorOpticFlowInputFunc, self).__init__(**kwargs)
 
     def parse(self, dataset):
@@ -60,21 +63,43 @@ class EstimatorOpticFlowInputFunc(PairwiseInputFuncBase):
 
     def _compute_optic_flow(self, frame1, frame2, box1, box2):
         # convert frames to uint8 gray scale
-        f1_u8_gray = img_as_ubyte(color.rgb2gray(frame1))
-        f2_u8_gray = img_as_ubyte(color.rgb2gray(frame2))
+        if self.flow_method == 'fb':
+            f1_u8_gray = img_as_ubyte(color.rgb2gray(frame1))
+            f2_u8_gray = img_as_ubyte(color.rgb2gray(frame2))
 
-        flow_farneback = cv2.calcOpticalFlowFarneback(f1_u8_gray,
-                                                      f2_u8_gray,
-                                                      flow=None,
-                                                      pyr_scale=0.5,
-                                                      levels=4,
-                                                      winsize=15,
-                                                      iterations=3,
-                                                      poly_n=5,
-                                                      poly_sigma=1.1,
-                                                      flags=0)
+            flow = cv2.calcOpticalFlowFarneback(f1_u8_gray,
+                                                          f2_u8_gray,
+                                                          flow=None,
+                                                          pyr_scale=0.5,
+                                                          levels=4,
+                                                          winsize=15,
+                                                          iterations=3,
+                                                          poly_n=5,
+                                                          poly_sigma=1.1,
+                                                          flags=0)
+        elif self.flow_method == 'c2f':
+            # Flow Options:
+            alpha = 0.012
+            ratio = 0.75
+            minWidth = 20
+            nOuterFPIterations = 7
+            nInnerFPIterations = 1
+            nSORIterations = 30
+            colType = 0 #RGB
 
-        return frame1, frame2, flow_farneback, box1, box2
+            frame1_float64 = frame1.astype(np.double)
+            frame2_float64 = frame2.astype(np.double)
+
+            u, v, _ = pyflow.coarse2fine_flow(frame1_float64, frame2_float64,
+                                              alpha, ratio, minWidth,
+                                              nOuterFPIterations, nInnerFPIterations, nSORIterations, colType)
+
+            flow = np.stack([u, v], axis=2).astype(np.float32)
+
+        else:
+            raise ValueError('Unkown flow method %s' % self.flow_method)
+
+        return frame1, frame2, flow, box1, box2
 
     def _pad_and_crop_to_box1(self, frame1, frame2, flow, box1, box2):
         frame_h, frame_w, _ = flow.shape
