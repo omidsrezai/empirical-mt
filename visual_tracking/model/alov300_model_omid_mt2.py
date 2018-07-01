@@ -9,7 +9,7 @@ import MT
 from tuning import SpeedTuning, DirectionTuning
 from visual_tracking.model.alov300_model_base import ALOV300ModelBase
 
-LEARNING_RATE = 0.001 # was 0.0001
+LEARNING_RATE = 0.0001 # was 0.0001
 
 MAX_IMG_OUTPUTS = 64
 
@@ -113,9 +113,9 @@ class MTTracker(ALOV300ModelBase):
         tf.summary.histogram('pool', pool)
 
         pool_flatten = tf.layers.flatten(pool)
-        pool_flatten = tf.layers.dropout(pool_flatten, 0.1)
+        # pool_flatten = tf.layers.dropout(pool_flatten, 0.1)
 
-        dense = self._dense(pool_flatten, units=4096, name='dense1')
+        dense = self._dense(pool_flatten, units=1024, name='dense1', act=tf.nn.elu)
         dense = self._dense(dense, units=256, name='dense2')
         pbbox = self._dense(dense, units=4, name='dense3', act=tf.nn.sigmoid)
 
@@ -134,7 +134,8 @@ class MTTracker(ALOV300ModelBase):
             return tf.estimator.EstimatorSpec(mode=mode, loss=bbox_loss, train_op=train_op)
 
         # EVAL mode
-        eval_metrics_ops = self._get_eval_metrics_ops(predictions=pbbox, labels=labels)
+        eval_metrics_ops = self._get_eval_metrics_ops(predictions=pbbox - features['box'],
+                                                      labels=labels - features['box'])
 
         return tf.estimator.EstimatorSpec(mode=mode, loss=bbox_loss, eval_metric_ops=eval_metrics_ops)
 
@@ -174,9 +175,9 @@ class MTTracker(ALOV300ModelBase):
             metrics_ops['%s_mean' % v] = tf.metrics.mean(predictions[:, i])
             metrics_ops['%s_var' % v] = tf.metrics.mean(tf.square(predictions[:, i] - pred_mean[i]))
             metrics_ops['%s_covar' % v] = tf.contrib.metrics.streaming_covariance(predictions=predictions[:, i],
-                                                                                  labels=labels[i])
+                                                                                  labels=labels[:, i])
             metrics_ops['%s_corr' % v] = tf.contrib.metrics.streaming_pearson_correlation(predictions=predictions[:, i],
-                                                                                          labels=labels[:, i]),
+                                                                                          labels=labels[:, i])
 
         return metrics_ops
 
@@ -197,7 +198,7 @@ class MTTracker(ALOV300ModelBase):
             t_mean, t_var = tf.nn.moments(t_delta, axes=0)
             p_mean, p_var = tf.nn.moments(p_delta, axes=0)
 
-            covar = tf.nn.moments(tf.multiply(p_delta, t_delta), axes=0)[0] - tf.multiply(t_mean, p_mean)
+            covar = tf.reduce_mean(tf.multiply(p_delta, t_delta), axis=0) - tf.multiply(t_mean, p_mean)
             corr = tf.div(covar, tf.sqrt(tf.multiply(t_var, p_var)))
 
             for i, v in enumerate(_dim_ids):
