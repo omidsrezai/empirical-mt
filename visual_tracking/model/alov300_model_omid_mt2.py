@@ -63,17 +63,17 @@ class MTTracker(ALOV300ModelBase):
             tf.summary.histogram('activations', mt_activity)
 
             tf.summary.image('speed_tun_l2_norm',
-                             tf.norm(speed_tun_layer, ord=2, axis=3),
+                             tf.norm(speed_tun_layer, ord=2, axis=3, keep_dims=True),
                              max_outputs=MAX_IMG_OUTPUTS)
             tf.summary.image('direction_tun_l2_norm',
-                             tf.norm(direction_tun_layer, ord=2, axis=3),
+                             tf.norm(direction_tun_layer, ord=2, axis=3, keep_dims=True),
                              max_outputs=MAX_IMG_OUTPUTS)
             tf.summary.image('mt_act_2_norm',
-                             tf.norm(mt_activity, ord=2, axis=3),
+                             tf.norm(mt_activity, ord=2, axis=3, keep_dims=True),
                              max_outputs=MAX_IMG_OUTPUTS)
 
         mt_activity = tf.layers.batch_normalization(mt_activity, name='mt_act_batch_norm')
-        tf.summary.image('batch_normed_mt_act', tf.norm(mt_activity, ord=2, axis=3))
+        tf.summary.image('batch_normed_mt_act', tf.norm(mt_activity, ord=2, axis=3, keep_dims=True))
 
         conv = self._conv2d(mt_activity,
                             kernel_size=(3, 3),
@@ -85,7 +85,7 @@ class MTTracker(ALOV300ModelBase):
 
         with tf.name_scope('attention_mask'):
             masks = tf.expand_dims(features['mask'], 3)
-            tf.summary.image('attention_mask', masks)
+            tf.summary.image('attention_mask', masks, max_outputs=MAX_IMG_OUTPUTS)
 
             masked = tf.concat([conv, masks], axis=3)
 
@@ -97,6 +97,8 @@ class MTTracker(ALOV300ModelBase):
                             name='conv2',
                             batch_norm=True)
 
+        conv = tf.layers.average_pooling2d(conv, pool_size=(2, 2), strides=(2, 2))
+
         conv = self._conv2d(conv,
                             kernel_size=(3, 3),
                             strides=(1, 1),
@@ -106,6 +108,7 @@ class MTTracker(ALOV300ModelBase):
                             batch_norm=True)
 
         pool = tf.layers.average_pooling2d(conv, pool_size=(2, 2), strides=(2, 2))
+
         tf.summary.image('pool_l2_norm', tf.norm(pool, ord=2, axis=3, keep_dims=True), max_outputs=MAX_IMG_OUTPUTS)
         tf.summary.histogram('pool', pool)
 

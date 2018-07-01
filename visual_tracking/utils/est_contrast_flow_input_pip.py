@@ -32,7 +32,13 @@ class EstimatorOpticFlowInputFunc(PairwiseInputFuncBase):
                                   self._pad_and_crop_to_box1,
                                   [frame1, frame2, flow, box1, box2],
                                   [tf.float32, tf.float32, tf.float32, tf.float32, tf.float32])),
-                              num_parallel_calls=self.n_workers)\
+                              num_parallel_calls=self.n_workers) \
+            .map(lambda frame1, frame2, flow, box1, box2:
+                 tuple(tf.py_func(
+                     self._draw_attention_mask,
+                     [frame1, frame2, flow, box1, box2],
+                     [tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, tf.float32])),
+                 num_parallel_calls=self.n_workers)\
             .map(self._fmt_input, num_parallel_calls=self.n_workers)
 
         return dataset
@@ -126,11 +132,19 @@ class EstimatorOpticFlowInputFunc(PairwiseInputFuncBase):
 
         return frame1_cropped, frame2_cropped, flow_cropped, box1_cropped, box2_cropped
 
+    def _draw_attention_mask(self, frame1, frame2, flow, box1, box2):
+        y_min, x_min, y_max, x_max = np.round(box1 * self.fixed_input_dim).astype(np.int32)
 
-    def _fmt_input(self, frame1, frame2, flow, box1, box2):
+        mask = np.zeros_like(frame1[:, :, 0], dtype=np.float32)
+        mask[y_min:y_max, x_min:x_max] = 1
+
+        return frame1, frame2, flow, box1, box2, mask
+
+    def _fmt_input(self, frame1, frame2, flow, box1, box2, mask):
         frame1.set_shape([self.fixed_input_dim, self.fixed_input_dim, 3])
         frame2.set_shape([self.fixed_input_dim, self.fixed_input_dim, 3])
         flow.set_shape([self.fixed_input_dim, self.fixed_input_dim, 2])
+        mask.set_shape([self.fixed_input_dim, self.fixed_input_dim])
         box1.set_shape([4])
         box2.set_shape([4])
 
@@ -145,5 +159,6 @@ class EstimatorOpticFlowInputFunc(PairwiseInputFuncBase):
             'frame2': frame2,
             'speed': speed,
             'direction': direction,
-            'box': box1
+            'box': box1,
+            'mask': mask
         }, box2

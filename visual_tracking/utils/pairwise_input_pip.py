@@ -12,13 +12,15 @@ class PairwiseInputFuncBase(object):
 
     def __init__(self,
                  dataset_index_filepath,
-                 cache_suffix,
+                 cache_id,
                  input_path='../',
+                 cache_path='../../',
                  batch_size=64,
                  num_epochs=-1,
                  shuffle_buffer_size=500,
                  n_workers=10,
                  prefetch_buffer_size=300):
+        self.cache_path = cache_path
         self.batch_size = batch_size
         self.num_epochs = num_epochs
         self.shuffle_bsize = shuffle_buffer_size,
@@ -26,7 +28,7 @@ class PairwiseInputFuncBase(object):
         self.input_path = input_path
         self.n_workers = n_workers
         self.prefetch_buffer_size=prefetch_buffer_size
-        self.cache_suffix = cache_suffix
+        self.cache_id = cache_id
 
     def _pairwise_group_frames_pyfunc(self, video_folderpath, annotation_filepath, height, width):
 
@@ -135,6 +137,7 @@ class PairwiseInputFuncBase(object):
                                                      self._pairwise_group_frames_pyfunc,
                                                      [video_path, annotation_path, h, w],
                                                      [tf.string, tf.string, tf.float32, tf.float32]))))\
+            .shuffle(buffer_size=100000) \
             .map(lambda f1_filepath, f2_filepath, box1, box2:
                                             tuple(tf.py_func(
                                                 self._read_frames_pyfunc,
@@ -145,7 +148,7 @@ class PairwiseInputFuncBase(object):
         # apply addtional pre-processing
         pairwise_dataset = self.parse(pairwise_dataset)
 
-        pairwise_dataset = pairwise_dataset.cache(filename='../../dataset_cache%s' % self.cache_suffix)\
+        pairwise_dataset = pairwise_dataset.cache(filename=path.join(self.cache_path, ('dataset_cache%s' % self.cache_id)))\
             .shuffle(buffer_size=2000)\
             .repeat(self.num_epochs)\
             .batch(self.batch_size)\
