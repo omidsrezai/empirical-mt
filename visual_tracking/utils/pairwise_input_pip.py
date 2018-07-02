@@ -17,6 +17,7 @@ class PairwiseInputFuncBase(object):
                  cache_path='../../',
                  batch_size=64,
                  num_epochs=-1,
+                 shuffle=False,
                  shuffle_buffer_size=500,
                  n_workers=10,
                  prefetch_buffer_size=300):
@@ -29,6 +30,7 @@ class PairwiseInputFuncBase(object):
         self.n_workers = n_workers
         self.prefetch_buffer_size=prefetch_buffer_size
         self.cache_id = cache_id
+        self.shuffle = shuffle
 
     def _pairwise_group_frames_pyfunc(self, video_folderpath, annotation_filepath, height, width):
 
@@ -148,11 +150,14 @@ class PairwiseInputFuncBase(object):
         # apply addtional pre-processing
         pairwise_dataset = self.parse(pairwise_dataset)
 
-        pairwise_dataset = pairwise_dataset.cache(filename=path.join(self.cache_path, ('dataset_cache%s' % self.cache_id)))\
-            .shuffle(buffer_size=2000)\
-            .repeat(self.num_epochs)\
-            .batch(self.batch_size)\
-            .prefetch(2)
+        pairwise_dataset = pairwise_dataset.cache(filename=path.join(self.cache_path, ('dataset_cache%s' % self.cache_id)))
+
+        if self.shuffle:
+            pairwise_dataset = pairwise_dataset.shuffle(buffer_size=2000)
+
+        pairwise_dataset = pairwise_dataset.repeat(self.num_epochs)\
+                                           .batch(self.batch_size)\
+                                           .prefetch(2)
 
         iterator = pairwise_dataset.make_one_shot_iterator()
         features = iterator.get_next()
