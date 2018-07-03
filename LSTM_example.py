@@ -73,7 +73,7 @@ model = Model(inputs=[mt_0], outputs=[output_1])
 
 adam = Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0, clipnorm=.01)
 model.compile(loss='categorical_crossentropy', optimizer=adam, metrics = ['accuracy'])
-
+model.summary()
 
 class RandomSource:
 
