@@ -7,41 +7,43 @@ import numpy as np
 from tuning import SpeedTuning, DirectionTuning
 from visual_tracking.model.alov300_model_base import ALOV300ModelBase
 
-LEARNING_RATE = 0.0001 # was 0.0001
+LEARNING_RATE = 0.00001 # was 0.0001
 FIXED_FRAME_SIZE = 76 # TODO make this a parameter
 
 tf_sess = tf.Session()
 K.set_session(tf_sess)
 
 
-class MTTracker(ALOV300ModelBase):
+class SeqMTTracker(ALOV300ModelBase):
 
     def __init__(self, mt_params_path, speed_scaler, **kwargs):
         self.mt_params = pickle.load(open(mt_params_path, "rb"))
         self.n_chann = 64
         self.speed_scaler = speed_scaler
-        super(MTTracker, self).__init__(**kwargs)
+        super(SeqMTTracker, self).__init__(**kwargs)
 
     def __call__(self, features, labels, mode):
 
-        with tf.name_scope('speed_input'):
-            speed_input = tf.identity(features['speed'])
+        with tf.name_scope('speed_inputs'):
+            speed_inputs = tf.identity(features['speed'])
+            avg_speed = tf.reduce_mean(speed_inputs, axis=1)
 
-            tf.summary.histogram('speed_input', speed_input)
-            tf.summary.image('speed', tf.expand_dims(speed_input, axis=3), max_outputs=self.max_im_outputs)
+            tf.summary.histogram('speed_input', speed_inputs)
+            tf.summary.image('speed', tf.expand_dims(avg_speed, axis=3), max_outputs=self.max_im_outputs)
 
-        with tf.name_scope('direction_input'):
+        with tf.name_scope('direction_inputs'):
             direction_input = tf.identity(features['direction'])
+            avg_direction = tf.reduce_mean(direction_input, axis=1)
 
             tf.summary.histogram('direction_input', direction_input)
-            tf.summary.image('direction', tf.expand_dims(direction_input, axis=3), max_outputs=self.max_im_outputs)
+            tf.summary.image('direction', tf.expand_dims(avg_direction, axis=3), max_outputs=self.max_im_outputs)
 
         with tf.name_scope('mt_tunning_layers'):
             speed_tun_layer = SpeedTuning(64, self.mt_params, self.speed_scaler, name='speed_tunning')
             direction_tun_layer = DirectionTuning(64, self.mt_params, name='direction_tunning')
 
-            speed_tun_layer = speed_tun_layer([speed_input, tf.zeros_like(speed_input)])
-            direction_tun_layer = direction_tun_layer(direction_input)
+            speed_tun_layer = speed_tun_layer([avg_speed, tf.zeros_like(avg_speed)])
+            direction_tun_layer = direction_tun_layer(avg_direction)
 
             mt_activity = tf.multiply(speed_tun_layer, direction_tun_layer, name='mt_act_tensor')
 
@@ -72,7 +74,7 @@ class MTTracker(ALOV300ModelBase):
                             act=tf.nn.elu,
                             batch_norm=True,
                             dropout=0.2,
-                            kernel_l2_reg_scale=2e-5)
+                            kernel_l2_reg_scale=0.0)
 
         with tf.name_scope('attention_mask'):
             masks = tf.expand_dims(features['mask'], 3)
@@ -83,26 +85,26 @@ class MTTracker(ALOV300ModelBase):
         conv = self._conv2d(masked,
                             kernel_size=(3, 3),
                             strides=(1, 1),
-                            filters=128,
+                            filters=64,
                             padding='valid',
                             name='conv2',
                             batch_norm=True,
                             act=tf.nn.elu,
                             dropout=0.2,
-                            kernel_l2_reg_scale=2e-5)
+                            kernel_l2_reg_scale=0.0)
 
         conv = tf.layers.max_pooling2d(conv, pool_size=(2, 2), strides=(2, 2))
 
         conv = self._conv2d(conv,
                             kernel_size=(3, 3),
                             strides=(1, 1),
-                            filters=128,
+                            filters=64,
                             padding='valid',
                             name='conv3',
                             batch_norm=True,
                             act=tf.nn.elu,
                             dropout=0.2,
-                            kernel_l2_reg_scale=2e-5)
+                            kernel_l2_reg_scale=0.0)
 
         pool = tf.layers.max_pooling2d(conv, pool_size=(2, 2), strides=(2, 2))
 
@@ -110,37 +112,28 @@ class MTTracker(ALOV300ModelBase):
         tf.summary.histogram('pool', pool)
 
         pool_flatten = tf.layers.flatten(pool)
-        pool_flatten = tf.layers.dropout(pool_flatten, 0.1)
+        # pool_flatten = tf.layers.dropout(pool_flatten, 0.1)
 
         dense = self._dense(pool_flatten,
-                            units=4096,
-                            name='dense1',
-                            act=tf.nn.tanh,
-                            batch_norm=True,
-                            kernel_l2_reg_scale=2e-6)
-
-        dense = self._dense(dense,
                             units=1024,
                             name='dense2',
                             act=tf.nn.tanh,
                             batch_norm=True,
-                            kernel_l2_reg_scale=4e-6)
+                            kernel_l2_reg_scale=0.)
 
         dense = self._dense(dense,
                             units=256,
                             name='dense3',
                             act=tf.nn.tanh,
                             batch_norm=True,
-                            kernel_l2_reg_scale=4e-6)
-
-        p_delta = self._dense(dense,
-                            units=4,
-                            name='dense4',
-                            act=None,
-                            batch_norm=True,
                             kernel_l2_reg_scale=0.)
 
-        pbbox = p_delta + features['box']
+        pbbox = self._dense(dense,
+                            units=4,
+                            name='dense4',
+                            act=tf.nn.sigmoid,
+                            batch_norm=True,
+                            kernel_l2_reg_scale=0.)
 
         # PREDICT mode
         if mode == tf.estimator.ModeKeys.PREDICT:
@@ -148,16 +141,19 @@ class MTTracker(ALOV300ModelBase):
 
         # TRAIN mode
         with tf.name_scope('frame_pairs'):
+            frame1 = features['frames'][:, 0, :, :, :]
+            frame2 = features['frames'][:, -1, :, :, :]
+
             with tf.name_scope('frame1'):
-                self._summary_images_with_bbox(features['frame1'], features['box'], name='frame1_box')
+                self._summary_images_with_bbox(frame1, features['bbox'], name='frame1_box')
 
             with tf.name_scope('frame2'):
-                self._summary_images_with_bbox(features['frame2'], labels, name='frame2_box')
-                self._summary_images_with_bbox(features['frame2'], pbbox, name='frame2_predicted_box')
+                self._summary_images_with_bbox(frame2, labels, name='frame2_box')
+                self._summary_images_with_bbox(frame2, pbbox, name='frame2_predicted_box')
 
-        self._predicted_delta_summary(prev_bbox=features['box'], p_bbox=pbbox, t_bbox=labels)
+        self._predicted_delta_summary(prev_bbox=features['bbox'], p_bbox=pbbox, t_bbox=labels)
 
-        bbox_loss =tf.losses.absolute_difference(labels=labels - features['box'], predictions=p_delta)
+        bbox_loss =tf.losses.mean_squared_error(labels=labels, predictions=pbbox)
 
         if mode == tf.estimator.ModeKeys.TRAIN:
             optimizer = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE)
@@ -168,30 +164,7 @@ class MTTracker(ALOV300ModelBase):
             return tf.estimator.EstimatorSpec(mode=mode, loss=bbox_loss, train_op=train_op)
 
         # EVAL mode
-        eval_metrics_ops = self._get_eval_metrics_ops(predictions=pbbox - features['box'],
-                                                      labels=labels - features['box'])
+        eval_metrics_ops = self._get_eval_metrics_ops(predictions=pbbox - features['bbox'],
+                                                      labels=labels - features['bbox'])
 
         return tf.estimator.EstimatorSpec(mode=mode, loss=bbox_loss, eval_metric_ops=eval_metrics_ops)
-
-    def _flow_decoding(self, conv, direction_input, speed_input):
-
-        with tf.name_scope('conv_supervise'):
-            flow_input_x = tf.multiply(speed_input, tf.cos(direction_input))
-            flow_input_y = tf.multiply(speed_input, tf.sin(direction_input))
-
-            tf.summary.image('flow_x_input_l1', tf.expand_dims(tf.abs(flow_input_x), axis=3),
-                             max_outputs=self.max_im_outputs)
-            tf.summary.image('flow_y_input_l1', tf.expand_dims(tf.abs(flow_input_y), axis=3),
-                             max_outputs=self.max_im_outputs)
-            tf.summary.image('conv3_batch_normed_l2_norm', tf.norm(conv, ord=2, axis=3, keep_dims=True),
-                             max_outputs=self.max_im_outputs)
-
-            tf.summary.histogram('flow_input_x', flow_input_x)
-            tf.summary.histogram('flow_input_y', flow_input_y)
-            tf.summary.histogram('conv3_batch_norm', conv)
-
-            conv_loss = tf.losses.mean_squared_error(labels=tf.stack([flow_input_y, flow_input_x], axis=3),
-                                                     predictions=conv)
-            tf.summary.scalar('conv_loss', conv_loss)
-
-        return conv_loss, flow_input_x, flow_input_y
