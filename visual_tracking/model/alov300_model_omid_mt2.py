@@ -7,7 +7,7 @@ import numpy as np
 from tuning import SpeedTuning, DirectionTuning
 from visual_tracking.model.alov300_model_base import ALOV300ModelBase
 
-LEARNING_RATE = 0.0001 # was 0.0001
+
 FIXED_FRAME_SIZE = 76 # TODO make this a parameter
 
 tf_sess = tf.Session()
@@ -40,7 +40,7 @@ class MTTracker(ALOV300ModelBase):
             speed_tun_layer = SpeedTuning(64, self.mt_params, self.speed_scaler, name='speed_tunning')
             direction_tun_layer = DirectionTuning(64, self.mt_params, name='direction_tunning')
 
-            speed_tun_layer = speed_tun_layer([speed_input, tf.zeros_like(speed_input)])
+            speed_tun_layer = speed_tun_layer(speed_input)
             direction_tun_layer = direction_tun_layer(direction_input)
 
             mt_activity = tf.multiply(speed_tun_layer, direction_tun_layer, name='mt_act_tensor')
@@ -68,11 +68,11 @@ class MTTracker(ALOV300ModelBase):
                             strides=(1, 1),
                             filters=64,
                             padding='same',
-                            name='conv1',
+                            scope_name='conv1',
                             act=tf.nn.elu,
                             batch_norm=True,
                             dropout=0.2,
-                            kernel_l2_reg_scale=2e-5)
+                            kernel_l2_reg_scale=1e-4)
 
         with tf.name_scope('attention_mask'):
             masks = tf.expand_dims(features['mask'], 3)
@@ -85,11 +85,11 @@ class MTTracker(ALOV300ModelBase):
                             strides=(1, 1),
                             filters=128,
                             padding='valid',
-                            name='conv2',
+                            scope_name='conv2',
                             batch_norm=True,
                             act=tf.nn.elu,
                             dropout=0.2,
-                            kernel_l2_reg_scale=2e-5)
+                            kernel_l2_reg_scale=1e-4)
 
         conv = tf.layers.max_pooling2d(conv, pool_size=(2, 2), strides=(2, 2))
 
@@ -98,11 +98,11 @@ class MTTracker(ALOV300ModelBase):
                             strides=(1, 1),
                             filters=128,
                             padding='valid',
-                            name='conv3',
+                            scope_name='conv3',
                             batch_norm=True,
                             act=tf.nn.elu,
                             dropout=0.2,
-                            kernel_l2_reg_scale=2e-5)
+                            kernel_l2_reg_scale=1e-4)
 
         pool = tf.layers.max_pooling2d(conv, pool_size=(2, 2), strides=(2, 2))
 
@@ -117,21 +117,21 @@ class MTTracker(ALOV300ModelBase):
                             name='dense1',
                             act=tf.nn.tanh,
                             batch_norm=True,
-                            kernel_l2_reg_scale=2e-6)
+                            kernel_l2_reg_scale=1e-5)
 
         dense = self._dense(dense,
                             units=1024,
                             name='dense2',
                             act=tf.nn.tanh,
                             batch_norm=True,
-                            kernel_l2_reg_scale=4e-6)
+                            kernel_l2_reg_scale=1e-5)
 
         dense = self._dense(dense,
                             units=256,
                             name='dense3',
                             act=tf.nn.tanh,
                             batch_norm=True,
-                            kernel_l2_reg_scale=4e-6)
+                            kernel_l2_reg_scale=1e-5)
 
         p_delta = self._dense(dense,
                             units=4,
@@ -142,36 +142,13 @@ class MTTracker(ALOV300ModelBase):
 
         pbbox = p_delta + features['box']
 
-        # PREDICT mode
-        if mode == tf.estimator.ModeKeys.PREDICT:
-            return tf.estimator.EstimatorSpec(mode=mode, predictions=pbbox)
-
-        # TRAIN mode
-        with tf.name_scope('frame_pairs'):
-            with tf.name_scope('frame1'):
-                self._summary_images_with_bbox(features['frame1'], features['box'], name='frame1_box')
-
-            with tf.name_scope('frame2'):
-                self._summary_images_with_bbox(features['frame2'], labels, name='frame2_box')
-                self._summary_images_with_bbox(features['frame2'], pbbox, name='frame2_predicted_box')
-
-        self._predicted_delta_summary(prev_bbox=features['box'], p_bbox=pbbox, t_bbox=labels)
-
-        bbox_loss =tf.losses.absolute_difference(labels=labels - features['box'], predictions=p_delta)
-
-        if mode == tf.estimator.ModeKeys.TRAIN:
-            optimizer = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE)
-            train_op = optimizer.minimize(
-                loss=bbox_loss,
-                global_step=tf.train.get_or_create_global_step()
-            )
-            return tf.estimator.EstimatorSpec(mode=mode, loss=bbox_loss, train_op=train_op)
-
-        # EVAL mode
-        eval_metrics_ops = self._get_eval_metrics_ops(predictions=pbbox - features['box'],
-                                                      labels=labels - features['box'])
-
-        return tf.estimator.EstimatorSpec(mode=mode, loss=bbox_loss, eval_metric_ops=eval_metrics_ops)
+        return self._compile(mode=mode,
+                             frame1=features['frame1'],
+                             frame2=features['frame2'],
+                             prev_box=features['box'],
+                             labels=labels,
+                             pbbox=pbbox,
+                             p_delta=p_delta)
 
     def _flow_decoding(self, conv, direction_input, speed_input):
 

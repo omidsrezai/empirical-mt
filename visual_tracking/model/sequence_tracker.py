@@ -24,6 +24,9 @@ class SeqMTTracker(ALOV300ModelBase):
 
     def __call__(self, features, labels, mode):
 
+        #features['direction'].set_shape([64, 5, 76, 76])
+        #features['speed'].set_shape([64, 5, 76, 76])
+
         with tf.name_scope('speed_inputs'):
             speed_inputs = tf.identity(features['speed'])
             avg_speed = tf.reduce_mean(speed_inputs, axis=1)
@@ -42,79 +45,91 @@ class SeqMTTracker(ALOV300ModelBase):
             speed_tun_layer = SpeedTuning(64, self.mt_params, self.speed_scaler, name='speed_tunning')
             direction_tun_layer = DirectionTuning(64, self.mt_params, name='direction_tunning')
 
-            speed_tun_layer = speed_tun_layer([avg_speed, tf.zeros_like(avg_speed)])
-            direction_tun_layer = direction_tun_layer(avg_direction)
+            speed_tun_act = self._time_distributed(speed_inputs, speed_tun_layer, name='speed_tun')
 
-            mt_activity = tf.multiply(speed_tun_layer, direction_tun_layer, name='mt_act_tensor')
+            direction_tun_act = self._time_distributed(direction_input, direction_tun_layer, name='direction_tun')
+            mt_activity = tf.multiply(speed_tun_act, direction_tun_act, name='mt_act_tensor')
 
             # visualize speeding tuning and direction tuning
-            tf.summary.histogram("speed_tuning", speed_tun_layer)
-            tf.summary.histogram("direction_tuning", direction_tun_layer)
+            tf.summary.histogram("speed_tuning", speed_tun_act)
+            tf.summary.histogram("direction_tuning", direction_tun_act)
             tf.summary.histogram('activations', mt_activity)
 
-            tf.summary.image('speed_tun_l2_norm',
-                             tf.norm(speed_tun_layer, ord=2, axis=3, keep_dims=True),
+            tf.summary.image('avg_speed_tun_l2_norm',
+                             tf.norm(tf.reduce_mean(speed_tun_act, axis=1), ord=2, axis=3, keep_dims=True),
                              max_outputs=self.max_im_outputs)
-            tf.summary.image('direction_tun_l2_norm',
-                             tf.norm(direction_tun_layer, ord=2, axis=3, keep_dims=True),
+            tf.summary.image('avg_direction_tun_l2_norm',
+                             tf.norm(tf.reduce_mean(direction_tun_act, axis=1), ord=2, axis=3, keep_dims=True),
                              max_outputs=self.max_im_outputs)
-            tf.summary.image('mt_act_2_norm',
-                             tf.norm(mt_activity, ord=2, axis=3, keep_dims=True),
+            tf.summary.image('avg_mt_act_2_norm',
+                             tf.norm(tf.reduce_mean(mt_activity, axis=1), ord=2, axis=3, keep_dims=True),
                              max_outputs=self.max_im_outputs)
 
-        mt_activity = tf.layers.batch_normalization(mt_activity, name='mt_act_batch_norm')
-        tf.summary.image('batch_normed_mt_act', tf.norm(mt_activity, ord=2, axis=3, keep_dims=True))
+        mt_activity = self._time_distributed(mt_activity,
+                                             tf.layers.BatchNormalization(name='mt_act_batch_norm'),
+                                             name='mt_act_batch_norm')
+        tf.summary.image('avg_batch_normed_mt_act',
+                         tf.norm(tf.reduce_mean(mt_activity, axis=1), ord=2, axis=3, keep_dims=True))
 
-        conv = self._conv2d(mt_activity,
-                            kernel_size=(3, 3),
-                            strides=(1, 1),
-                            filters=64,
-                            padding='same',
-                            name='conv1',
-                            act=tf.nn.elu,
-                            batch_norm=True,
-                            dropout=0.2,
-                            kernel_l2_reg_scale=0.0)
+        conv2d_1 = tf.layers.Conv2D(kernel_size=(3, 3),
+                                        strides=(1, 1),
+                                        filters=64,
+                                        padding='same',
+                                        activation=tf.nn.elu,
+                                        name='conv1')
+
+        conv = self._time_distributed(mt_activity, conv2d_1, name='conv1')
 
         with tf.name_scope('attention_mask'):
             masks = tf.expand_dims(features['mask'], 3)
             tf.summary.image('attention_mask', masks, max_outputs=self.max_im_outputs)
 
-            masked = tf.concat([conv, masks], axis=3)
+            masked = self._time_distributed(conv, lambda x: tf.concat([x, masks], axis=3), name='add_mask')
 
-        conv = self._conv2d(masked,
-                            kernel_size=(3, 3),
-                            strides=(1, 1),
-                            filters=64,
-                            padding='valid',
-                            name='conv2',
-                            batch_norm=True,
-                            act=tf.nn.elu,
-                            dropout=0.2,
-                            kernel_l2_reg_scale=0.0)
+        conv2d_2 = tf.layers.Conv2D(kernel_size=(3, 3),
+                                        strides=(1, 1),
+                                        filters=64,
+                                        padding='valid',
+                                        activation=tf.nn.elu,
+                                        name='conv2')
 
-        conv = tf.layers.max_pooling2d(conv, pool_size=(2, 2), strides=(2, 2))
+        conv = self._time_distributed(masked, conv2d_2, name='conv2')
+        pool = self._time_distributed(conv, tf.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2)), name='pool2')
 
-        conv = self._conv2d(conv,
-                            kernel_size=(3, 3),
-                            strides=(1, 1),
-                            filters=64,
-                            padding='valid',
-                            name='conv3',
-                            batch_norm=True,
-                            act=tf.nn.elu,
-                            dropout=0.2,
-                            kernel_l2_reg_scale=0.0)
+        conv2d_3 = tf.layers.Conv2D(kernel_size=(3, 3),
+                                    strides=(1, 1),
+                                    filters=64,
+                                    padding='valid',
+                                    activation=tf.nn.elu,
+                                    name='conv2')
 
-        pool = tf.layers.max_pooling2d(conv, pool_size=(2, 2), strides=(2, 2))
+        conv = self._time_distributed(pool, conv2d_3, name='conv3')
+        pool = self._time_distributed(conv, tf.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2)), name='pool3')
 
-        tf.summary.image('pool_l2_norm', tf.norm(pool, ord=2, axis=3, keep_dims=True), max_outputs=self.max_im_outputs)
+        print(pool.shape)
+
+        tf.summary.image('last_pool_avg_l2_norm',
+                         tf.norm(tf.reduce_mean(pool, axis=1), ord=2, axis=3, keep_dims=True),
+                         max_outputs=self.max_im_outputs)
         tf.summary.histogram('pool', pool)
 
-        pool_flatten = tf.layers.flatten(pool)
+        pool_flatten = self._time_distributed(pool, tf.layers.Flatten(), name='flatten')
+
+        print(pool_flatten.shape)
+
+        weight_avg = tf.layers.conv1d(pool_flatten,
+                                      filters=1,
+                                      kernel_size=1,
+                                      strides=1,
+                                      data_format='channels_first',
+                                      name='weighted_avg')
+
+        weight_avg = tf.squeeze(weight_avg, axis=1)
+
+        print(weight_avg.shape)
         # pool_flatten = tf.layers.dropout(pool_flatten, 0.1)
 
-        dense = self._dense(pool_flatten,
+        dense = self._dense(weight_avg,
                             units=1024,
                             name='dense2',
                             act=tf.nn.tanh,
@@ -128,43 +143,25 @@ class SeqMTTracker(ALOV300ModelBase):
                             batch_norm=True,
                             kernel_l2_reg_scale=0.)
 
-        pbbox = self._dense(dense,
-                            units=4,
-                            name='dense4',
-                            act=tf.nn.sigmoid,
-                            batch_norm=True,
-                            kernel_l2_reg_scale=0.)
+        p_delta = self._dense(dense,
+                             units=4,
+                             name='dense4',
+                             act=None,
+                             batch_norm=True,
+                             kernel_l2_reg_scale=0.)
 
-        # PREDICT mode
-        if mode == tf.estimator.ModeKeys.PREDICT:
-            return tf.estimator.EstimatorSpec(mode=mode, predictions=pbbox)
+        pbbox = p_delta + features['bbox']
 
-        # TRAIN mode
-        with tf.name_scope('frame_pairs'):
-            frame1 = features['frames'][:, 0, :, :, :]
-            frame2 = features['frames'][:, -1, :, :, :]
+        return self._compile(mode=mode,
+                             frame1=features['frames'][:, 0],
+                             frame2=features['frames'][:, -1],
+                             prev_box=features['bbox'],
+                             labels=labels,
+                             p_delta=p_delta,
+                             pbbox=pbbox)
 
-            with tf.name_scope('frame1'):
-                self._summary_images_with_bbox(frame1, features['bbox'], name='frame1_box')
+    def _time_distributed(self, xs, f, name):
+        with tf.variable_scope('time_dist_%s' % name):
+            ys = tf.stack([f(xs[:, i]) for i in range(xs.shape[1])], axis=1)
 
-            with tf.name_scope('frame2'):
-                self._summary_images_with_bbox(frame2, labels, name='frame2_box')
-                self._summary_images_with_bbox(frame2, pbbox, name='frame2_predicted_box')
-
-        self._predicted_delta_summary(prev_bbox=features['bbox'], p_bbox=pbbox, t_bbox=labels)
-
-        bbox_loss =tf.losses.mean_squared_error(labels=labels, predictions=pbbox)
-
-        if mode == tf.estimator.ModeKeys.TRAIN:
-            optimizer = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE)
-            train_op = optimizer.minimize(
-                loss=bbox_loss,
-                global_step=tf.train.get_or_create_global_step()
-            )
-            return tf.estimator.EstimatorSpec(mode=mode, loss=bbox_loss, train_op=train_op)
-
-        # EVAL mode
-        eval_metrics_ops = self._get_eval_metrics_ops(predictions=pbbox - features['bbox'],
-                                                      labels=labels - features['bbox'])
-
-        return tf.estimator.EstimatorSpec(mode=mode, loss=bbox_loss, eval_metric_ops=eval_metrics_ops)
+        return ys
