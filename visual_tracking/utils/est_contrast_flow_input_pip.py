@@ -3,6 +3,8 @@ import numpy as np
 import tensorflow as tf
 from skimage import transform, img_as_ubyte, color, util
 
+import sys
+sys.path.insert(0, '/home/ading/dev/pyflow/')
 import pyflow
 
 from visual_tracking.utils.pairwise_input_pip import PairwiseInputFuncBase
@@ -158,7 +160,7 @@ class EstimatorOpticFlowInputFunc(PairwiseInputFuncBase):
         return frame1_cropped, frame2_cropped, flow_cropped, box1_cropped, box2_cropped
 
     def _draw_attention_mask(self, frame1, frame2, flow, box1, box2):
-        y_min, x_min, y_max, x_max = np.round(box1 * self.fixed_input_dim).astype(np.int32)
+        y_min, x_min, y_max, x_max = np.round(box1 * (self.fixed_input_dim - 1)).astype(np.int32)
 
         mask = np.zeros_like(frame1[:, :, 0], dtype=np.float32)
         mask[y_min:y_max, x_min:x_max] = 1

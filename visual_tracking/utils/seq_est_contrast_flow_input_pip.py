@@ -193,7 +193,7 @@ class SeqEstimatorOpticFlowInputFunc(SixFrameInputFuncBase):
 
     def _fmt_input(self, frames, flows, mask, bboxes):
         frames.set_shape([self.max_seq_len, self.fixed_input_dim, self.fixed_input_dim, 3])
-        flows.set_shape([self.max_seq_len, self.fixed_input_dim, self.fixed_input_dim, 2])
+        flows.set_shape([self.max_seq_len - 1, self.fixed_input_dim, self.fixed_input_dim, 2])
         mask.set_shape([self.fixed_input_dim, self.fixed_input_dim])
         bboxes.set_shape([self.max_seq_len, 4])
 
@@ -210,21 +210,3 @@ class SeqEstimatorOpticFlowInputFunc(SixFrameInputFuncBase):
             'mask': mask,
             'bbox': bboxes[0, :]
         }, bboxes[-1, :]
-
-
-if __name__ == '__main__':
-    ne = SeqEstimatorOpticFlowInputFunc(dataset_index_filepath='../../data/alov300++/alov300_train.csv', input_path='../../',
-                                        batch_size=5, shuffle_buffer_size=8196, cache_id=None,
-                                        flow_method='fb')()
-
-    rs = []
-    with tf.Session(config=tf.ConfigProto(device_count={'GPU': 0})) as sess:
-        i = 0
-        while i < 1:
-            i = i + 1
-            try:
-                r = sess.run(ne)
-            except tf.errors.OutOfRangeError:
-                break
-
-        print(r)
