@@ -2,13 +2,13 @@ from os import path
 
 import tensorflow as tf
 
-LEARNING_RATE = 0.0001 # was 0.0001
-
 
 class ALOV300ModelBase(object):
 
-    def __init__(self, max_image_outputs=64):
+    def __init__(self, max_image_outputs=64, lr=0.0001, loss='l1'):
         self.max_im_outputs = max_image_outputs
+        self.learing_rate = lr
+        self.loss = loss
 
     def _compile(self, mode, frame1, frame2, prev_box, labels, pbbox, p_delta):
         # PREDICT mode
@@ -26,10 +26,11 @@ class ALOV300ModelBase(object):
 
         self._predicted_delta_summary(prev_bbox=prev_box, p_bbox=pbbox, t_bbox=labels)
 
-        bbox_loss = tf.losses.absolute_difference(labels=labels - prev_box, predictions=p_delta)
+        bbox_loss = tf.losses.absolute_difference(labels=labels - prev_box, predictions=p_delta) \
+            if self.loss == 'l1' else tf.losses.mean_squared_error(labels=labels - prev_box, predictions=p_delta)
 
         if mode == tf.estimator.ModeKeys.TRAIN:
-            optimizer = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE)
+            optimizer = tf.train.AdamOptimizer(learning_rate=self.learing_rate)
             train_op = optimizer.minimize(
                 loss=bbox_loss + tf.losses.get_regularization_loss(),
                 global_step=tf.train.get_or_create_global_step()
@@ -84,7 +85,8 @@ class ALOV300ModelBase(object):
                 dropout=0.,
                 kernel_l2_reg_scale=0.,
                 bias_l2_reg_scale=0.,
-                reuse=None):
+                reuse=None,
+                pool=False):
 
         with tf.variable_scope(scope_name) as scope:
             conv = tf.layers.conv2d(x,
@@ -105,6 +107,9 @@ class ALOV300ModelBase(object):
 
             if act is not None:
                 conv = act(conv)
+
+            if pool:
+                conv = tf.layers.max_pooling2d(conv, pool_size=(2, 2), strides=(2, 2))
 
             if dropout > 0:
                 conv = tf.layers.dropout(conv, dropout)
@@ -172,5 +177,5 @@ class ALOV300ModelBase(object):
                 tf.summary.scalar('corvar_delta_%s' % v, covar[i])
                 tf.summary.scalar('corr_delta_%s' % v, corr[i])
 
-            tf.summary.scalar('l1_loss', tf.norm(p_bbox - t_bbox, ord=1))
-            tf.summary.scalar('l2_loss', tf.norm(p_bbox - t_bbox, ord=2))
+            tf.summary.scalar('l1_loss', tf.reduce_mean(tf.abs(p_bbox - t_bbox)))
+            tf.summary.scalar('l2_loss', tf.reduce_mean(tf.square(p_bbox - t_bbox)))

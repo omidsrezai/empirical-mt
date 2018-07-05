@@ -72,7 +72,7 @@ class MTTracker(ALOV300ModelBase):
                             act=tf.nn.elu,
                             batch_norm=True,
                             dropout=0.2,
-                            kernel_l2_reg_scale=1e-4)
+                            kernel_l2_reg_scale=1e-5)
 
         with tf.name_scope('attention_mask'):
             masks = tf.expand_dims(features['mask'], 3)
@@ -89,11 +89,11 @@ class MTTracker(ALOV300ModelBase):
                             batch_norm=True,
                             act=tf.nn.elu,
                             dropout=0.2,
-                            kernel_l2_reg_scale=1e-4)
+                            kernel_l2_reg_scale=1e-5)
 
-        conv = tf.layers.max_pooling2d(conv, pool_size=(2, 2), strides=(2, 2))
+        pool = tf.layers.max_pooling2d(conv, pool_size=(2, 2), strides=(2, 2))
 
-        conv = self._conv2d(conv,
+        conv = self._conv2d(pool,
                             kernel_size=(3, 3),
                             strides=(1, 1),
                             filters=128,
@@ -102,7 +102,33 @@ class MTTracker(ALOV300ModelBase):
                             batch_norm=True,
                             act=tf.nn.elu,
                             dropout=0.2,
-                            kernel_l2_reg_scale=1e-4)
+                            kernel_l2_reg_scale=1e-5)
+
+        pool = tf.layers.max_pooling2d(conv, pool_size=(2, 2), strides=(2, 2))
+
+        conv = self._conv2d(pool,
+                            kernel_size=(3, 3),
+                            strides=(1, 1),
+                            filters=256,
+                            padding='valid',
+                            scope_name='conv4',
+                            batch_norm=True,
+                            act=tf.nn.elu,
+                            dropout=0.2,
+                            kernel_l2_reg_scale=1e-5)
+
+        pool = tf.layers.max_pooling2d(conv, pool_size=(2, 2), strides=(2, 2))
+
+        conv = self._conv2d(pool,
+                            kernel_size=(3, 3),
+                            strides=(1, 1),
+                            filters=256,
+                            padding='valid',
+                            scope_name='conv5',
+                            batch_norm=True,
+                            act=tf.nn.elu,
+                            dropout=0.2,
+                            kernel_l2_reg_scale=1e-5)
 
         pool = tf.layers.max_pooling2d(conv, pool_size=(2, 2), strides=(2, 2))
 
@@ -113,21 +139,14 @@ class MTTracker(ALOV300ModelBase):
         pool_flatten = tf.layers.dropout(pool_flatten, 0.1)
 
         dense = self._dense(pool_flatten,
-                            units=4096,
-                            name='dense1',
-                            act=tf.nn.tanh,
-                            batch_norm=True,
-                            kernel_l2_reg_scale=1e-5)
-
-        dense = self._dense(dense,
-                            units=1024,
+                            units=256,
                             name='dense2',
                             act=tf.nn.tanh,
                             batch_norm=True,
                             kernel_l2_reg_scale=1e-5)
 
         dense = self._dense(dense,
-                            units=256,
+                            units=64,
                             name='dense3',
                             act=tf.nn.tanh,
                             batch_norm=True,
@@ -135,9 +154,9 @@ class MTTracker(ALOV300ModelBase):
 
         p_delta = self._dense(dense,
                             units=4,
-                            name='dense4',
+                            name='dense6',
                             act=None,
-                            batch_norm=True,
+                            batch_norm=False,
                             kernel_l2_reg_scale=0.)
 
         pbbox = p_delta + features['box']
@@ -172,3 +191,4 @@ class MTTracker(ALOV300ModelBase):
             tf.summary.scalar('conv_loss', conv_loss)
 
         return conv_loss, flow_input_x, flow_input_y
+

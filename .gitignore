@@ -5,3 +5,7 @@ notebooks/
 data
 input
 venv
+
+# dataset caches
+*tempstate*
+*.index
