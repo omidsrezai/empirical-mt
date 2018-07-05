@@ -1,13 +1,11 @@
 import pickle
 
 import tensorflow as tf
-from keras import  backend as K
-import numpy as np
+from keras import backend as K
 
 from tuning import SpeedTuning, DirectionTuning
 from visual_tracking.model.alov300_model_base import ALOV300ModelBase
 
-LEARNING_RATE = 0.00001 # was 0.0001
 FIXED_FRAME_SIZE = 76 # TODO make this a parameter
 
 tf_sess = tf.Session()
@@ -16,9 +14,12 @@ K.set_session(tf_sess)
 
 class SeqMTTracker(ALOV300ModelBase):
 
-    def __init__(self, mt_params_path, speed_scaler, **kwargs):
+    def __init__(self, mt_params_path,
+                 speed_scaler,
+                 n_chann=64,
+                 **kwargs):
         self.mt_params = pickle.load(open(mt_params_path, "rb"))
-        self.n_chann = 64
+        self.n_chann = n_chann
         self.speed_scaler = speed_scaler
         super(SeqMTTracker, self).__init__(**kwargs)
 
@@ -29,14 +30,18 @@ class SeqMTTracker(ALOV300ModelBase):
             avg_speed = tf.reduce_mean(speed_inputs, axis=1)
 
             tf.summary.histogram('speed_input', speed_inputs)
-            tf.summary.image('avg_speed', tf.expand_dims(avg_speed, axis=3), max_outputs=self.max_im_outputs)
+            tf.summary.image('avg_speed',
+                             tf.expand_dims(avg_speed, axis=3),
+                             max_outputs=self.max_im_outputs)
 
         with tf.name_scope('direction_inputs'):
             direction_input = tf.identity(features['direction'])
             avg_direction = tf.reduce_mean(direction_input, axis=1)
 
             tf.summary.histogram('direction_input', direction_input)
-            tf.summary.image('direction', tf.expand_dims(avg_direction, axis=3), max_outputs=self.max_im_outputs)
+            tf.summary.image('avg_direction',
+                             tf.expand_dims(avg_direction, axis=3),
+                             max_outputs=self.max_im_outputs)
 
         with tf.name_scope('mt_tunning_layers'):
             speed_tun_layer = SpeedTuning(64, self.mt_params, self.speed_scaler, name='speed_tunning')
@@ -44,8 +49,12 @@ class SeqMTTracker(ALOV300ModelBase):
 
             speed_tun_act = self._time_distributed(speed_inputs, speed_tun_layer, name='speed_tun')
 
-            direction_tun_act = self._time_distributed(direction_input, direction_tun_layer, name='direction_tun')
-            mt_activity = tf.multiply(speed_tun_act, direction_tun_act, name='mt_act_tensor')
+            direction_tun_act = self._time_distributed(direction_input,
+                                                       direction_tun_layer,
+                                                       name='direction_tun')
+            mt_activity = tf.multiply(speed_tun_act,
+                                      direction_tun_act,
+                                      name='mt_act_tensor')
 
             # visualize speeding tuning and direction tuning
             tf.summary.histogram("speed_tuning", speed_tun_act)
@@ -93,6 +102,7 @@ class SeqMTTracker(ALOV300ModelBase):
                              tf.norm(w_average, ord=2, axis=3, keep_dims=True),
                              max_outputs=self.max_im_outputs)
 
+            # plot the weight for each temporal dimension
             scope.reuse_variables()
             weights = tf.squeeze(tf.get_variable('weighted_avg/kernel'))
             for d in range(weights.shape[0]):
@@ -105,14 +115,13 @@ class SeqMTTracker(ALOV300ModelBase):
 
             masked = tf.concat([w_average, masks], axis=3)
 
-
         conv = masked
         for id, n_filters in zip([4, 5, 6], [64, 64, 128]):
             conv = self._conv2d(conv,
                                 kernel_size=(3, 3),
                                 filters=n_filters,
                                 strides=(1, 1),
-                                scope_name='conv%s' % id,
+                                name='conv%s' % id,
                                 act=tf.nn.elu,
                                 batch_norm=True,
                                 padding='valid',
@@ -141,11 +150,11 @@ class SeqMTTracker(ALOV300ModelBase):
                             kernel_l2_reg_scale=0.)
 
         p_delta = self._dense(dense,
-                             units=4,
-                             name='predictions',
-                             act=None,
-                             batch_norm=False,
-                             kernel_l2_reg_scale=0.)
+                              units=4,
+                              name='predictions',
+                              act=None,
+                              batch_norm=False,
+                              kernel_l2_reg_scale=0.)
 
         pbbox = p_delta + features['bbox']
 
@@ -153,9 +162,10 @@ class SeqMTTracker(ALOV300ModelBase):
                              frame1=features['frames'][:, 0],
                              frame2=features['frames'][:, -1],
                              prev_box=features['bbox'],
-                             labels=labels,
-                             p_delta=p_delta,
-                             pbbox=pbbox)
+                             ground_truth_box=labels,
+                             y_hat=p_delta,
+                             pred_box=pbbox,
+                             y=labels - features['bbox'])
 
     def _time_distributed(self, xs, f, name):
         with tf.variable_scope('time_dist_%s' % name):
