@@ -35,8 +35,8 @@ class MTTracker(ALOV300ModelBase):
             tf.summary.image('direction', tf.expand_dims(direction_input, axis=3), max_outputs=self.max_im_outputs)
 
         with tf.name_scope('mt_tunning_layers'):
-            speed_tun_layer = SpeedTuning(64, self.mt_params, self.speed_scaler, name='speed_tunning')
-            direction_tun_layer = DirectionTuning(64, self.mt_params, name='direction_tunning')
+            speed_tun_layer = SpeedTuning(self.n_chann, self.mt_params, self.speed_scaler, name='speed_tunning')
+            direction_tun_layer = DirectionTuning(self.n_chann, self.mt_params, name='direction_tunning')
 
             speed_tun_layer = speed_tun_layer(speed_input)
             direction_tun_layer = direction_tun_layer(direction_input)
@@ -61,91 +61,60 @@ class MTTracker(ALOV300ModelBase):
         mt_activity = tf.layers.batch_normalization(mt_activity, name='mt_act_batch_norm')
         tf.summary.image('batch_normed_mt_act', tf.norm(mt_activity, ord=2, axis=3, keep_dims=True))
 
-        conv = self._conv2d(mt_activity,
-                            kernel_size=(3, 3),
-                            strides=(1, 1),
-                            filters=64,
-                            padding='same',
-                            name='conv1',
-                            act=tf.nn.elu,
-                            batch_norm=True,
-                            dropout=0.2,
-                            kernel_l2_reg_scale=1e-5)
+        conv = mt_activity
+        for id, n_filters in zip([1, 2], [64, 64]):
+            conv = self._conv2d(conv,
+                                kernel_size=(3, 3),
+                                strides=(1, 1),
+                                filters=n_filters,
+                                padding='same',
+                                name='conv%s' % id,
+                                act=tf.nn.elu,
+                                batch_norm=True,
+                                dropout=0.1,
+                                kernel_l2_reg_scale=0.,
+                                pool=False)
 
         with tf.name_scope('attention_mask'):
             masks = tf.expand_dims(features['mask'], 3)
-            tf.summary.image('attention_mask', masks, max_outputs=self.max_im_outputs)
+            #tf.summary.image('attention_mask', masks, max_outputs=self.max_im_outputs)
 
             masked = tf.concat([conv, masks], axis=3)
 
-        conv = self._conv2d(masked,
-                            kernel_size=(3, 3),
-                            strides=(1, 1),
-                            filters=128,
-                            padding='valid',
-                            name='conv2',
-                            batch_norm=True,
-                            act=tf.nn.elu,
-                            dropout=0.2,
-                            kernel_l2_reg_scale=1e-5,
-                            pool=True)
-
-        conv = self._conv2d(conv,
-                            kernel_size=(3, 3),
-                            strides=(1, 1),
-                            filters=128,
-                            padding='valid',
-                            name='conv3',
-                            batch_norm=True,
-                            act=tf.nn.elu,
-                            dropout=0.2,
-                            kernel_l2_reg_scale=1e-5,
-                            pool=True)
-
-        conv = self._conv2d(conv,
-                            kernel_size=(3, 3),
-                            strides=(1, 1),
-                            filters=256,
-                            padding='valid',
-                            name='conv4',
-                            batch_norm=True,
-                            act=tf.nn.elu,
-                            dropout=0.2,
-                            kernel_l2_reg_scale=1e-5,
-                            pool=True)
-
-        conv = self._conv2d(conv,
-                            kernel_size=(3, 3),
-                            strides=(1, 1),
-                            filters=256,
-                            padding='valid',
-                            name='conv5',
-                            batch_norm=True,
-                            act=tf.nn.elu,
-                            dropout=0.2,
-                            kernel_l2_reg_scale=1e-5,
-                            pool=True)
+        conv = masked
+        for id, n_filters in zip([3, 4, 5, 6], [128, 128, 128, 128]):
+            conv = self._conv2d(conv,
+                                kernel_size=(3, 3),
+                                strides=(1, 1),
+                                filters=n_filters,
+                                padding='valid',
+                                name='conv%s' % id,
+                                batch_norm=True,
+                                act=tf.nn.elu,
+                                dropout=0.1,
+                                kernel_l2_reg_scale=1e-5,
+                                pool=True)
 
         pool_flatten = tf.layers.flatten(conv)
-        pool_flatten = tf.layers.dropout(pool_flatten, 0.1)
+        #pool_flatten = tf.layers.dropout(pool_flatten, 0.1)
 
         dense = self._dense(pool_flatten,
                             units=256,
-                            name='dense2',
+                            name='dense1',
                             act=tf.nn.tanh,
                             batch_norm=True,
-                            kernel_l2_reg_scale=1e-5)
+                            kernel_l2_reg_scale=5e-6)
 
         dense = self._dense(dense,
                             units=64,
-                            name='dense3',
+                            name='dense2',
                             act=tf.nn.tanh,
                             batch_norm=True,
-                            kernel_l2_reg_scale=1e-5)
+                            kernel_l2_reg_scale=5e-6)
 
         p_delta = self._dense(dense,
                             units=4,
-                            name='dense6',
+                            name='predictions',
                             act=None,
                             batch_norm=False,
                             kernel_l2_reg_scale=0.)
@@ -159,5 +128,5 @@ class MTTracker(ALOV300ModelBase):
                              ground_truth_box=labels,
                              pred_box=pbbox,
                              y_hat=p_delta,
-                             y=labels - features['box'])
+                             y=labels - features['box'] if labels is not None else None)
 

@@ -165,7 +165,7 @@ class SeqMTTracker(ALOV300ModelBase):
                              ground_truth_box=labels,
                              y_hat=p_delta,
                              pred_box=pbbox,
-                             y=labels - features['bbox'])
+                             y=labels - features['bbox'] if labels is not None else None)
 
     def _time_distributed(self, xs, f, name):
         with tf.variable_scope('time_dist_%s' % name):
