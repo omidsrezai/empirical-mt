@@ -1,0 +1,11 @@
+If you receive an import error for "NonPos", you have to add it to the constrain module in Keras. Here is the method:
+
+class NonPos(Constraint):
+    """Constrains the weights to be non-positive.
+    """
+
+    def __call__(self, w):
+        w *= K.cast(K.less_equal(w, 0.), K.floatx())
+        return w
+
+

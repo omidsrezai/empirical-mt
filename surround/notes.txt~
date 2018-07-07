@@ -1,0 +1,4 @@
+If you receive an import error for "NonPos", you have to add it to the constrain module in Keras. Here is the method:
+
+
+
