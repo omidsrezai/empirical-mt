@@ -12,12 +12,19 @@ from visual_tracking.utils.pairwise_input_pip import PairwiseInputFuncBase
 
 class EstimatorOpticFlowInputFunc(PairwiseInputFuncBase):
 
-    def __init__(self, mode=tf.estimator.ModeKeys.TRAIN, flow_method='c2f', k=2, fixed_input_dim=200, **kwargs):
+    def __init__(self, mode=tf.estimator.ModeKeys.TRAIN,
+                 flow_method='c2f',
+                 k=2,
+                 fixed_input_dim=200,
+                 speed_scalar=4,
+                 **kwargs):
+
         self.mode = mode
         self.k = k
         self.fixed_input_dim = fixed_input_dim
         self.flow_method = flow_method
         super(EstimatorOpticFlowInputFunc, self).__init__(**kwargs)
+        self.speed_scalar = speed_scalar
 
     def parse(self, dataset):
         dataset = dataset.map(lambda frame1, frame2, box1, box2:
@@ -181,10 +188,31 @@ class EstimatorOpticFlowInputFunc(PairwiseInputFuncBase):
         speed = tf.norm(flow, ord=2, axis=2)
         direction = tf.atan2(flow_y, flow_x)
 
+        # project speed into the space of tent basis
+        tent_basis = []
+        tent_centers = np.exp(np.arange(0, 5, .45))
+
+        for i in range(0, len(tent_centers) - 2):
+            _left = tent_centers[i]
+            _center = tent_centers[i + 1]
+            _right = tent_centers[i + 2]
+
+            x = speed * self.speed_scalar
+            y_left = (x - _left) / (_center - _left)
+            y_right = (_right - x) / (_right - _center)
+
+            y = tf.where((x >= _left) & (x <= _center), y_left, tf.zeros_like(x)) \
+                + tf.where((x >= _center) & (x <= _right), y_right, tf.zeros_like(x))
+
+            tent_basis.append(y)
+
+        speed_tents = tf.stack(tent_basis, axis=2)
+
         return {
             'frame1': frame1,
             'frame2': frame2,
             'speed': speed,
+            'speed_tents': speed_tents,
             'direction': direction,
             'box': box1,
             'mask': mask
