@@ -1,141 +1,208 @@
+from os import path
+
 import tensorflow as tf
 from keras import backend as K
 from keras.constraints import NonNeg
 
 from surround.smart_example import SmartInput as TentLinearComb, AddBiasNonlinear, SmartConv2D as SelConv2d
 from tuning import SpeedTuning, DirectionTuning
+from visual_tracking.model.neural_net_blocks import conv2d
 from visual_tracking.utils.keras_utils import NonPos
-
-FIXED_FRAME_SIZE = 76 # TODO make this a parameter
+from visual_tracking.utils.tensorboad_utils import feature_maps_summary
 
 tf_sess = tf.Session()
 K.set_session(tf_sess)
 
+
 class AreaMT(object):
 
-    def __init__(self, speed_scalar, n_chann, empirical_excitatory_params, max_im_outputs):
+    def __init__(self, speed_scalar,
+                 n_chann,
+                 empirical_excitatory_params,
+                 max_im_outputs):
         self.speed_scalar = speed_scalar
         self.excitatory_params = empirical_excitatory_params
         self.n_chann = n_chann
         self.max_im_outputs = max_im_outputs
+        self._allocated = False
 
     def __call__(self, speed_input, speed_input_tents, direction_input, contrast_input=None):
 
-        with tf.variable_scope("area_mt"):
-            '''
-            excitatory component
-            '''
+        with tf.variable_scope("area_mt", reuse=self._allocated):
+            direction_tun = self._direction_tuning(direction_input)
 
-            with tf.name_scope('sp_tun_excit'):
-                speed_tun_excit_layer = SpeedTuning(self.n_chann,
-                                                    self.excitatory_params,
-                                                    self.speed_scalar,
-                                                    name='sp_tun_excit')
-                speed_tun_excit = speed_tun_excit_layer(speed_input)
-                self._3d_tensor_summary(speed_tun_excit, 'speed_tun_excitatory')
+            excitatory = self._excitatory(direction_tun, speed_input)
+            dir_selective_sup = self._direction_selective_suppressive(direction_tun, speed_input_tents)
+            non_dir_sel_sup = self._non_direction_selective_suppressive(speed_input_tents)
 
-            with tf.name_scope('dir_tun_excit'):
-                direction_tun_excit_layer = DirectionTuning(self.n_chann,
-                                                            self.excitatory_params,
-                                                            name='dir_tun_excit')
-                direction_tun_excit = direction_tun_excit_layer(direction_input)
+            mt_activity = self._integrate_components(dir_selective_sup, excitatory, non_dir_sel_sup)
 
-                self._3d_tensor_summary(direction_tun_excit, 'dir_tun_excitatory')
+            if (not self._allocated):
+                self._log_conv_kernels()
 
-            with tf.variable_scope("excitatory"):
-                excitatory = tf.multiply(speed_tun_excit, direction_tun_excit)
-                excitatory = tf.layers.batch_normalization(excitatory)
-                excitatory = self._15x15_chann_sel_conv2d(excitatory, k_constraint=NonNeg())
-
-                for t, n in zip([speed_tun_excit, direction_tun_excit, excitatory],
-                                ['speed_tun_excit', 'direction_tun_excit', 'excitatory']):
-                    self._3d_tensor_summary(t, n)
-
-            '''
-            direction-selective suppression component
-            '''
-
-            with tf.variable_scope('sp_tun_dir_sel_sup'):
-                speed_tun_dir_sel_sup = TentLinearComb(self.n_chann,
-                                                       constraint=NonNeg(),
-                                                       name='sp_tun_dir_sel_sup')(speed_input_tents)
-
-                self._3d_tensor_summary(speed_tun_dir_sel_sup, 'speed_tun_dir_sel_sup')
-
-            # shares direction tunning with excitatory component
-            direction_tun_dir_sel_sup = direction_tun_excit
-
-            with tf.variable_scope("dir_sel_sup"):
-                dir_selective_sup = tf.multiply(speed_tun_dir_sel_sup, direction_tun_dir_sel_sup)
-                dir_selective_sup = tf.layers.batch_normalization(dir_selective_sup)
-                dir_selective_sup = self._15x15_chann_sel_conv2d(dir_selective_sup, k_constraint=NonPos())
-
-                for t, n in zip([speed_tun_dir_sel_sup, direction_tun_dir_sel_sup, dir_selective_sup],
-                                ['speed_tun_dir_sel_sup', 'direction_tun_dir_sel_sup', 'direction_selective_sup']):
-                    self._3d_tensor_summary(t, n)
-
-            '''
-            non-direction-selective suppression component
-            '''
-
-            with tf.variable_scope("sp_tun_non_dir_sup"):
-                speed_tun_non_dir_sel_sup = TentLinearComb(self.n_chann,
-                                                           constraint=NonNeg(),
-                                                           name='sp_tun_non_dir_sup')(speed_input_tents)
-
-                self._3d_tensor_summary(speed_tun_non_dir_sel_sup, 'speed_tun_non_dir_sup')
-
-                # a fix to 'outbound_nodes'
-                speed_tun_non_dir_sel_sup = tf.identity(speed_tun_non_dir_sel_sup)
-
-            with tf.variable_scope("non_dir_sel_sup"):
-                non_dir_sel_sup = tf.layers.batch_normalization(speed_tun_non_dir_sel_sup)
-                non_dir_sel_sup = self._15x15_chann_sel_conv2d(non_dir_sel_sup, k_constraint=NonPos())
-
-                for t, n in zip([speed_tun_non_dir_sel_sup, non_dir_sel_sup],
-                                ['speed_tun_non_dir_sel_sup', 'non_direction_selective_sup']):
-                    self._3d_tensor_summary(t, n)
-
-            '''
-            combine three components
-            '''
-            with tf.variable_scope('integrate'):
-                mt_activity = excitatory + dir_selective_sup + non_dir_sel_sup
-                mt_activity = AddBiasNonlinear(self.n_chann,
-                                               activation='relu',
-                                               use_bias=True,
-                                               name='center')(mt_activity)
-                mt_activity = tf.identity(mt_activity) # a fix to AddBiadNonLinear missing outbound_nodes
-                mt_activity = tf.layers.conv2d(mt_activity,
-                                               kernel_size=(15, 15),
-                                               filters=self.n_chann,
-                                               strides=(1, 1),
-                                               padding='same',
-                                               activation=tf.nn.relu)
-                mt_activity = tf.layers.batch_normalization(mt_activity)
-                mt_activity = tf.layers.max_pooling2d(mt_activity,
-                                                      pool_size=(6, 6),
-                                                      strides=(6, 6),
-                                                      name='6x6_max_pool')
-
-                self._3d_tensor_summary(mt_activity, 'area_mt_activity')
+        self._allocated = True # flags the variables have been allocated
 
         return mt_activity
 
-    def _3d_tensor_summary(self, tensor, name):
-        tf.summary.histogram(name, tensor)
-        tf.summary.image('%s_l2_norm' % name,
-                         tf.norm(tensor, ord=2, axis=3, keep_dims=True),
-                         max_outputs=self.max_im_outputs)
+    def _direction_tuning(self, direction_input):
+        with tf.name_scope('direction_tun'):
+            direction_tun_excit_layer = DirectionTuning(self.n_chann,
+                                                        self.excitatory_params,
+                                                        name='direction_tun')
+            direction_tun = direction_tun_excit_layer(direction_input)
 
-    def _15x15_chann_sel_conv2d(self, x, k_constraint):
-        conv2d = SelConv2d(self.n_chann,
-                           (15, 15),
-                           activation=None,
-                           use_bias=False,
-                           padding="SAME",
-                           kernel_constraint=k_constraint,
-                           name='channel_sel_conv2d')
+            feature_maps_summary('direction_tun',
+                                 direction_tun,
+                                 max_im_outputs=self.max_im_outputs)
 
-        y = conv2d(x)
+        return direction_tun
+
+    def _excitatory(self, direction_tun, speed_input):
+        with tf.name_scope('sp_tun_excit'):
+            speed_tun_excit_layer = SpeedTuning(self.n_chann,
+                                                self.excitatory_params,
+                                                self.speed_scalar,
+                                                name='sp_tun_excit')
+            speed_tun_excit = speed_tun_excit_layer(speed_input)
+
+            feature_maps_summary('speed_tun_excitatory',
+                                 speed_tun_excit,
+                                 max_im_outputs=self.max_im_outputs)
+
+        with tf.variable_scope("excitatory"):
+            excitatory = tf.multiply(speed_tun_excit, direction_tun)
+            excitatory = tf.layers.batch_normalization(excitatory)
+            excitatory = self._15x15_chann_sel_conv2d(excitatory,
+                                                      k_constraint=NonNeg(),
+                                                      dp=0.1)
+
+            feature_maps_summary('excitatory',
+                                 excitatory,
+                                 max_im_outputs=self.max_im_outputs)
+
+        return excitatory
+
+    def _direction_selective_suppressive(self, direction_tun, speed_input_tents):
+        with tf.variable_scope('sp_tun_dir_sel_sup'):
+            speed_tun_dir_sel_sup = TentLinearComb(self.n_chann,
+                                                   constraint=NonNeg(),
+                                                   name='sp_tun_dir_sel_sup')(speed_input_tents)
+
+            feature_maps_summary('speed_tun_dir_sel_sup',
+                                 speed_tun_dir_sel_sup,
+                                 max_im_outputs=self.max_im_outputs)
+
+        with tf.variable_scope("dir_sel_sup"):
+            dir_selective_sup = tf.multiply(speed_tun_dir_sel_sup, direction_tun)
+            dir_selective_sup = tf.layers.batch_normalization(dir_selective_sup)
+            dir_selective_sup = self._15x15_chann_sel_conv2d(dir_selective_sup,
+                                                             k_constraint=NonPos(),
+                                                             dp=0.1)
+
+            feature_maps_summary('direction_selective_sup',
+                                 dir_selective_sup,
+                                 max_im_outputs=self.max_im_outputs)
+
+        return dir_selective_sup
+
+    def _non_direction_selective_suppressive(self, speed_input_tents):
+        with tf.variable_scope("sp_tun_non_dir_sup"):
+            speed_tun_non_dir_sel_sup = TentLinearComb(self.n_chann,
+                                                       constraint=NonNeg(),
+                                                       name='sp_tun_non_dir_sup')(speed_input_tents)
+            speed_tun_non_dir_sel_sup = tf.identity(speed_tun_non_dir_sel_sup) # a fix to outbound_nodes
+
+            feature_maps_summary('speed_tun_non_dir_sup',
+                                 speed_tun_non_dir_sel_sup,
+                                 max_im_outputs=self.max_im_outputs)
+
+        with tf.variable_scope("non_dir_sel_sup"):
+            non_dir_sel_sup = tf.layers.batch_normalization(speed_tun_non_dir_sel_sup)
+            non_dir_sel_sup = self._15x15_chann_sel_conv2d(non_dir_sel_sup,
+                                                           k_constraint=NonPos(),
+                                                           dp=0.1)
+
+            feature_maps_summary('non_direction_selective_sup',
+                                 non_dir_sel_sup,
+                                 max_im_outputs=self.max_im_outputs)
+
+        return non_dir_sel_sup
+
+    def _integrate_components(self, dir_selective_sup, excitatory, non_dir_sel_sup):
+        with tf.variable_scope('integrate'):
+            mt_activity = excitatory + dir_selective_sup + non_dir_sel_sup
+
+            with tf.variable_scope('relu_act'):
+                mt_activity = AddBiasNonlinear(self.n_chann,
+                                               activation='relu',
+                                               use_bias=True,
+                                               name='relu')(mt_activity)
+                mt_activity = tf.identity(mt_activity)  # a fix to AddBiadNonLinear missing outbound_nodes
+
+            mt_activity = tf.layers.batch_normalization(mt_activity)
+
+            mt_activity = conv2d(mt_activity,
+                                 kernel_size=(15, 15),
+                                 filters=self.n_chann,
+                                 strides=(1, 1),
+                                 padding='same',
+                                 act=tf.nn.relu,
+                                 dropout=0.1,
+                                 batch_norm=True,
+                                 max_pool=(6, 6),
+                                 k_init_uniform=False,
+                                 name='conv2d_6x6_pool')
+
+            feature_maps_summary('area_mt_activity',
+                                 mt_activity,
+                                 max_im_outputs=self.max_im_outputs)
+
+        return mt_activity
+
+    def _log_conv_kernels(self):
+        tenors_to_log = ['excitatory', 'dir_sel_sup', 'non_dir_sel_sup']
+        sig2 = .09
+
+        with tf.name_scope('kernel_visualization'):
+            for t_path in tenors_to_log:
+                kernel_path = path.join('mt_over_time/time_map_area_mt/area_mt',
+                                        t_path,
+                                        'chann_sel_conv2d/conv2d/kernel_smart:0')
+                selector_path = path.join('mt_over_time/time_map_area_mt/area_mt',
+                                          t_path,
+                                          'chann_sel_conv2d/conv2d/selector:0')
+
+                kernel = tf.get_default_graph().get_tensor_by_name(kernel_path)
+                selector = tf.get_default_graph().get_tensor_by_name(selector_path)
+
+                tf.summary.histogram('%s_chann_sel_conv2d_kernel' % t_path, kernel)
+
+                bias = tf.range(0, kernel.get_shape().as_list()[-1], dtype=tf.float32)
+                bias = tf.expand_dims(bias, axis=1)
+                bias = tf.tile(bias, [1, kernel.shape[-1]])
+                kernels = kernel * tf.exp(-tf.square(bias - selector) / (2 * sig2))
+
+                for i in range(kernel.shape[-1]):
+                    w = kernels[:, :, :, i]
+                    confidence = tf.abs(tf.reduce_mean(w, axis=(0, 1)))
+                    selected = w[:, :, tf.argmax(confidence)]
+                    tf.summary.image('%s_out_chann_%s' % (t_path, i),
+                                     tf.expand_dims(tf.expand_dims(selected, axis=2), axis=0))
+
+    def _15x15_chann_sel_conv2d(self, x, k_constraint, dp=0.):
+        with tf.variable_scope('chann_sel_conv2d'):
+            conv2d = SelConv2d(self.n_chann,
+                               (15, 15),
+                               activation=None,
+                               use_bias=False,
+                               padding="SAME",
+                               kernel_constraint=k_constraint,
+                               name='conv2d',
+                               kernel_initializer='glorot_normal')
+
+            y = tf.identity(conv2d(x)) # fixes no out_bound bug
+
+        if dp > 0.:
+            y = tf.layers.dropout(y)
+
         return y
