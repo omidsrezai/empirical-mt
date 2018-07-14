@@ -6,7 +6,7 @@ from keras.constraints import NonNeg
 
 from surround.smart_example import SmartInput as TentLinearComb, AddBiasNonlinear, SmartConv2D as SelConv2d
 from tuning import SpeedTuning, DirectionTuning
-from visual_tracking.model.neural_net_blocks import conv2d
+from visual_tracking.model.layer_tools import conv2d
 from visual_tracking.utils.keras_utils import NonPos
 from visual_tracking.utils.tensorboad_utils import feature_maps_summary
 
@@ -19,15 +19,18 @@ class AreaMT(object):
     def __init__(self, speed_scalar,
                  n_chann,
                  empirical_excitatory_params,
-                 max_im_outputs):
+                 chann_sel_dp,
+                 max_im_outputs,
+                 activity_dp):
         self.speed_scalar = speed_scalar
         self.excitatory_params = empirical_excitatory_params
         self.n_chann = n_chann
         self.max_im_outputs = max_im_outputs
         self._allocated = False
+        self.chann_sel_dp = chann_sel_dp
+        self.activity_dp = activity_dp
 
     def __call__(self, speed_input, speed_input_tents, direction_input, contrast_input=None):
-
         with tf.variable_scope("area_mt", reuse=self._allocated):
             direction_tun = self._direction_tuning(direction_input)
 
@@ -74,7 +77,7 @@ class AreaMT(object):
             excitatory = tf.layers.batch_normalization(excitatory)
             excitatory = self._15x15_chann_sel_conv2d(excitatory,
                                                       k_constraint=NonNeg(),
-                                                      dp=0.1)
+                                                      dp=self.chann_sel_dp)
 
             feature_maps_summary('excitatory',
                                  excitatory,
@@ -97,7 +100,7 @@ class AreaMT(object):
             dir_selective_sup = tf.layers.batch_normalization(dir_selective_sup)
             dir_selective_sup = self._15x15_chann_sel_conv2d(dir_selective_sup,
                                                              k_constraint=NonPos(),
-                                                             dp=0.1)
+                                                             dp=self.chann_sel_dp)
 
             feature_maps_summary('direction_selective_sup',
                                  dir_selective_sup,
@@ -120,7 +123,7 @@ class AreaMT(object):
             non_dir_sel_sup = tf.layers.batch_normalization(speed_tun_non_dir_sel_sup)
             non_dir_sel_sup = self._15x15_chann_sel_conv2d(non_dir_sel_sup,
                                                            k_constraint=NonPos(),
-                                                           dp=0.1)
+                                                           dp=self.chann_sel_dp)
 
             feature_maps_summary('non_direction_selective_sup',
                                  non_dir_sel_sup,
@@ -136,7 +139,7 @@ class AreaMT(object):
                 mt_activity = AddBiasNonlinear(self.n_chann,
                                                activation='relu',
                                                use_bias=True,
-                                               name='relu')(mt_activity)
+                                               name='add_bias_relu')(mt_activity)
                 mt_activity = tf.identity(mt_activity)  # a fix to AddBiadNonLinear missing outbound_nodes
 
             mt_activity = tf.layers.batch_normalization(mt_activity)
@@ -147,15 +150,13 @@ class AreaMT(object):
                                  strides=(1, 1),
                                  padding='same',
                                  act=tf.nn.relu,
-                                 dropout=0.1,
+                                 dropout=self.activity_dp,
                                  batch_norm=True,
                                  max_pool=(6, 6),
-                                 k_init_uniform=False,
-                                 name='conv2d_6x6_pool')
-
-            feature_maps_summary('area_mt_activity',
-                                 mt_activity,
-                                 max_im_outputs=self.max_im_outputs)
+                                 k_init_uniform=True,
+                                 name='conv2d_6x6_pool',
+                                 kernel_summary=not self._allocated,
+                                 activity_summary=True)
 
         return mt_activity
 
@@ -175,19 +176,22 @@ class AreaMT(object):
                 kernel = tf.get_default_graph().get_tensor_by_name(kernel_path)
                 selector = tf.get_default_graph().get_tensor_by_name(selector_path)
 
+                tf.summary.histogram('%s_chann_selector' % t_path, selector)
                 tf.summary.histogram('%s_chann_sel_conv2d_kernel' % t_path, kernel)
 
-                bias = tf.range(0, kernel.get_shape().as_list()[-1], dtype=tf.float32)
-                bias = tf.expand_dims(bias, axis=1)
-                bias = tf.tile(bias, [1, kernel.shape[-1]])
-                kernels = kernel * tf.exp(-tf.square(bias - selector) / (2 * sig2))
+                base = tf.range(0, kernel.get_shape().as_list()[-1], dtype=tf.float32)
+                base = tf.expand_dims(base, axis=1)
+                base = tf.tile(base, [1, kernel.shape[-1]])
+                kernels = kernel * tf.exp(-tf.square(base - selector) / (2 * sig2))
 
                 for i in range(kernel.shape[-1]):
                     w = kernels[:, :, :, i]
                     confidence = tf.abs(tf.reduce_mean(w, axis=(0, 1)))
                     selected = w[:, :, tf.argmax(confidence)]
+                    normed = tf.abs(selected)
+                    normed = (normed - tf.reduce_min(normed)) / (tf.reduce_max(normed) - tf.reduce_min(normed))
                     tf.summary.image('%s_out_chann_%s' % (t_path, i),
-                                     tf.expand_dims(tf.expand_dims(selected, axis=2), axis=0))
+                                     tf.expand_dims(tf.expand_dims(normed, axis=2), axis=0))
 
     def _15x15_chann_sel_conv2d(self, x, k_constraint, dp=0.):
         with tf.variable_scope('chann_sel_conv2d'):
@@ -198,7 +202,7 @@ class AreaMT(object):
                                padding="SAME",
                                kernel_constraint=k_constraint,
                                name='conv2d',
-                               kernel_initializer='glorot_normal')
+                               kernel_initializer='glorot_uniform')
 
             y = tf.identity(conv2d(x)) # fixes no out_bound bug
 

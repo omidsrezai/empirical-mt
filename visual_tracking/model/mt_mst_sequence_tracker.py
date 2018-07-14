@@ -7,14 +7,13 @@ from keras import backend as K
 from visual_tracking.model.alov300_model_base import ALOV300ModelBase
 from visual_tracking.model.area_mst import AreaMST
 from visual_tracking.model.area_mt import AreaMT
-from visual_tracking.model.neural_net_blocks import dense
+from visual_tracking.model.layer_tools import dense, conv2d
 
 tf_sess = tf.Session()
 K.set_session(tf_sess)
 
 
 class MTMSTSeqTracker(ALOV300ModelBase):
-
     def __init__(self, mt_params_path,
                  speed_scalar,
                  n_chann=64,
@@ -72,43 +71,66 @@ class MTMSTSeqTracker(ALOV300ModelBase):
             area_mt = AreaMT(max_im_outputs=4,
                              n_chann=self.n_chann,
                              empirical_excitatory_params=self.mt_params,
-                             speed_scalar=self.speed_scalar)
+                             speed_scalar=self.speed_scalar,
+                             chann_sel_dp=0.1,
+                             activity_dp=0.1)
             mt_activity = self._time_map((speed_inputs, speed_input_tents, direction_input),
                                          area_mt,
                                          name='area_mt')
-            mt_activity = self._time_map(mt_activity, tf.layers.BatchNormalization(), 'mt_act_batch_norm')
 
+            tf.summary.histogram('mt_activity', mt_activity)
             tf.summary.image('mt_activity_time_avg',
-                             tf.norm(tf.reduce_mean(mt_activity, axis=1), ord=2, axis=3, keep_dims=True))
+                             tf.norm(tf.reduce_mean(mt_activity, axis=1), ord=2, axis=3, keep_dims=True),
+                             max_outputs=self.max_im_outputs)
 
         with tf.variable_scope('mst_over_time'):
-            area_mst = AreaMST(n_chann=64, max_im_outputs=4)
+            area_mst = AreaMST(n_chann=64, max_im_outputs=4, dropout=0.1)
             mst_activity = self._time_map(mt_activity, area_mst, 'area_mst')
-            mst_activity = self._time_map(mst_activity, tf.layers.BatchNormalization(), 'mst_act_batch_norm')
+
+            tf.summary.histogram('mst_activity', mst_activity)
 
         with tf.variable_scope('avg_over_time'):
             mst_average = tf.reduce_mean(mst_activity, axis=1)
+            mst_average = tf.layers.batch_normalization(mst_average)
             mst_average = tf.layers.dropout(mst_average, 0.05)
 
+            tf.summary.histogram('mst_activity_time_avg', mst_average)
             tf.summary.image('mst_activity_time_avg',
                              tf.norm(mst_average, ord=2, axis=3, keep_dims=True),
                              max_outputs=self.max_im_outputs)
 
-        dense_act = dense(tf.layers.flatten(mst_average),
-                          units=256,
-                          name='dense2',
-                          act=tf.nn.elu,
-                          batch_norm=True,
-                          kernel_l2_reg_scale=0.01)
+        with tf.variable_scope('add_prev_bbox'):
+            prev_bbox = tf.expand_dims(features['mask'], axis=3)
+            prev_bbox = tf.layers.average_pooling2d(prev_bbox, pool_size=(19, 19), strides=(19, 19))
+            tf.summary.image('mask', prev_bbox, max_outputs=self.max_im_outputs)
 
-        dense_act = dense(dense_act,
-                          units=64,
-                          name='dense3',
-                          act=tf.nn.elu,
-                          batch_norm=True,
-                          kernel_l2_reg_scale=0.01)
+            masked = tf.concat([mst_average, prev_bbox], axis=3)
 
-        pbbox = dense(dense_act,
+            mst_average_masked = conv2d(masked,
+                                        kernel_size=(3, 3),
+                                        filters=64,
+                                        max_pool=None,
+                                        strides=(1, 1),
+                                        batch_norm=True,
+                                        dropout=0.05,
+                                        act=tf.nn.elu,
+                                        name='conv_with_mask')
+
+        dense1 = dense(tf.layers.flatten(mst_average_masked),
+                       units=256,
+                       name='dense1',
+                       act=tf.nn.elu,
+                       batch_norm=True,
+                       kernel_l2_reg_scale=0.)
+
+        dense2 = dense(dense1,
+                       units=64,
+                       name='dense2',
+                       act=tf.nn.elu,
+                       batch_norm=True,
+                       kernel_l2_reg_scale=0.)
+
+        pbbox = dense(dense2,
                       units=4,
                       name='predictions',
                       act=tf.nn.sigmoid,
