@@ -67,13 +67,18 @@ class MTMSTSeqTracker(ALOV300ModelBase):
 
             speed_input_tents = self._time_map(speed_inputs, _project_tent_basis, 'project_tents')
 
+            tf.summary.histogram('speed_input_tents', direction_input)
+            tf.summary.image('speed_input_tents_l1_time_0',
+                             tf.norm(speed_input_tents[:, 0], axis=3, ord=1, keep_dims=True),
+                             max_outputs=self.max_im_outputs)
+
         with tf.variable_scope('mt_over_time'):
             area_mt = AreaMT(max_im_outputs=4,
                              n_chann=self.n_chann,
                              empirical_excitatory_params=self.mt_params,
                              speed_scalar=self.speed_scalar,
-                             chann_sel_dp=0.1,
-                             activity_dp=0.1)
+                             chann_sel_dp=0.,
+                             activity_dp=0.)
             mt_activity = self._time_map((speed_inputs, speed_input_tents, direction_input),
                                          area_mt,
                                          name='area_mt')
@@ -84,7 +89,7 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              max_outputs=self.max_im_outputs)
 
         with tf.variable_scope('mst_over_time'):
-            area_mst = AreaMST(n_chann=64, max_im_outputs=4, dropout=0.1)
+            area_mst = AreaMST(n_chann=64, max_im_outputs=4, dropout=0.)
             mst_activity = self._time_map(mt_activity, area_mst, 'area_mst')
 
             tf.summary.histogram('mst_activity', mst_activity)
@@ -92,7 +97,6 @@ class MTMSTSeqTracker(ALOV300ModelBase):
         with tf.variable_scope('avg_over_time'):
             mst_average = tf.reduce_mean(mst_activity, axis=1)
             mst_average = tf.layers.batch_normalization(mst_average)
-            mst_average = tf.layers.dropout(mst_average, 0.05)
 
             tf.summary.histogram('mst_activity_time_avg', mst_average)
             tf.summary.image('mst_activity_time_avg',
@@ -112,7 +116,7 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                                         max_pool=None,
                                         strides=(1, 1),
                                         batch_norm=True,
-                                        dropout=0.05,
+                                        dropout=0.,
                                         act=tf.nn.elu,
                                         name='conv_with_mask')
 
@@ -156,4 +160,6 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                     if isinstance(x_timesteps, tuple) else f(x_timesteps[:, i])
                 y_timesteps.append(y_timestep)
 
-            return tf.stack(y_timesteps, axis=1)
+            y_timesteps = tf.stack(y_timesteps, axis=1)
+
+        return y_timesteps

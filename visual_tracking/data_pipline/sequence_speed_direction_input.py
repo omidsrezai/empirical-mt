@@ -13,11 +13,17 @@ from visual_tracking.utils.sequence_input_pip import SixFrameInputFuncBase
 
 class SeqEstimatorOpticFlowInputFunc(SixFrameInputFuncBase):
 
-    def __init__(self, mode=tf.estimator.ModeKeys.TRAIN, flow_method='c2f', k=2, fixed_input_dim=200, **kwargs):
+    def __init__(self, mode=tf.estimator.ModeKeys.TRAIN,
+                 flow_method='c2f',
+                 k=2,
+                 fixed_input_dim=200,
+                 speed_scalar=4,
+                 **kwargs):
         self.mode = mode
         self.k = k
         self.fixed_input_dim = fixed_input_dim
         self.flow_method = flow_method
+        self.speed_scalar = speed_scalar
         super(SeqEstimatorOpticFlowInputFunc, self).__init__(**kwargs)
 
     def parse(self, dataset):
@@ -54,7 +60,8 @@ class SeqEstimatorOpticFlowInputFunc(SixFrameInputFuncBase):
         # scale is computed so that k * max(obj_h, obj_w) = fix_dim
         _, frame_h, frame_w, _ = frames.shape
 
-        y_min, x_min, y_max, x_max = np.multiply(bboxes[0, :], np.array([frame_h - 1, frame_w - 1, frame_h - 1, frame_w - 1]))
+        y_min, x_min, y_max, x_max = np.multiply(bboxes[0, :],
+                                                 np.array([frame_h - 1, frame_w - 1, frame_h - 1, frame_w - 1]))
         object_height = y_max - y_min
         object_width = x_max - x_min
 
@@ -203,9 +210,33 @@ class SeqEstimatorOpticFlowInputFunc(SixFrameInputFuncBase):
         speed = tf.norm(flows, ord=2, axis=3)
         direction = tf.atan2(flow_y, flow_x)
 
+        speed_tents_ts = []
+        tent_centers = np.exp(np.arange(0, 5, .45))
+        for i in range(0, speed.shape[0]):
+            tent_basis = []
+            for j in range(0, len(tent_centers) - 2):
+                _left = tent_centers[j]
+                _center = tent_centers[j + 1]
+                _right = tent_centers[j + 2]
+
+                x = speed[i] * self.speed_scalar
+                y_left = (x - _left) / (_center - _left)
+                y_right = (_right - x) / (_right - _center)
+
+                y = tf.where((x >= _left) & (x <= _center), y_left, tf.zeros_like(x)) \
+                    + tf.where((x >= _center) & (x <= _right), y_right, tf.zeros_like(x))
+
+                tent_basis.append(y)
+
+            speed_tents = tf.stack(tent_basis, axis=2)
+            speed_tents_ts.append(speed_tents)
+
+        speed_tents_ts = tf.stack(speed_tents_ts, axis=0)
+
         return {
             'frames': frames,
             'speed': speed,
+            'speed_tents': speed_tents_ts,
             'direction': direction,
             'mask': mask,
             'bbox': bboxes[0, :]
