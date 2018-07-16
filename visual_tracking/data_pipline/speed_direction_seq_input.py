@@ -1,17 +1,17 @@
+import sys
+
 import cv2
 import numpy as np
 import tensorflow as tf
 from skimage import transform, img_as_ubyte, color, util
 
-import sys
+from visual_tracking.data_pipline.sequence_input_pip import SequenceInputFuncBase
+
 sys.path.insert(0, '/home/ading/dev/pyflow/')
 import pyflow
 
-from visual_tracking.utils.pairwise_input_pip import PairwiseInputFuncBase
-from visual_tracking.utils.sequence_input_pip import SixFrameInputFuncBase
 
-
-class SeqEstimatorOpticFlowInputFunc(SixFrameInputFuncBase):
+class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
 
     def __init__(self, mode=tf.estimator.ModeKeys.TRAIN,
                  flow_method='c2f',
@@ -24,7 +24,7 @@ class SeqEstimatorOpticFlowInputFunc(SixFrameInputFuncBase):
         self.fixed_input_dim = fixed_input_dim
         self.flow_method = flow_method
         self.speed_scalar = speed_scalar
-        super(SeqEstimatorOpticFlowInputFunc, self).__init__(**kwargs)
+        super(SpeedDirectionSeqInputFunc, self).__init__(**kwargs)
 
     def parse(self, dataset):
         dataset = dataset.map(lambda frames, bboxes:
