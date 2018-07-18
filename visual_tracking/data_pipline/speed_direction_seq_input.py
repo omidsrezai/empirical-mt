@@ -6,9 +6,7 @@ import tensorflow as tf
 from skimage import transform, img_as_ubyte, color, util
 
 from visual_tracking.data_pipline.sequence_input_pip import SequenceInputFuncBase
-
-sys.path.insert(0, '/home/ading/dev/pyflow/')
-import pyflow
+from visual_tracking.utils.optic_flow import compute_optic_flow
 
 
 class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
@@ -55,7 +53,6 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
 
         return dataset
 
-
     def _rescale_on_box1(self, frames, bboxes):
         # scale is computed so that k * max(obj_h, obj_w) = fix_dim
         _, frame_h, frame_w, _ = frames.shape
@@ -77,52 +74,9 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
         return frames_rescaled, bboxes
 
     def _compute_optic_flow(self, frames, bboxes):
-        # convert frames to uint8 gray scale
-        if self.flow_method == 'fb':
-            def _compute_optic_flow(frame1, frame2):
-                f1_u8_gray = img_as_ubyte(color.rgb2gray(frame1))
-                f2_u8_gray = img_as_ubyte(color.rgb2gray(frame2))
-
-                flow = cv2.calcOpticalFlowFarneback(f1_u8_gray,
-                                                              f2_u8_gray,
-                                                              flow=None,
-                                                              pyr_scale=0.5,
-                                                              levels=4,
-                                                              winsize=15,
-                                                              iterations=3,
-                                                              poly_n=5,
-                                                              poly_sigma=1.1,
-                                                              flags=0)
-                return flow
-
-        elif self.flow_method == 'c2f':
-            # Flow Options:
-            alpha = 0.012
-            ratio = 0.75
-            minWidth = 20
-            nOuterFPIterations = 7
-            nInnerFPIterations = 1
-            nSORIterations = 30
-            colType = 0 #RGB
-
-            def _compute_optic_flow(frame1, frame2):
-                frame1_float64 = frame1.astype(np.double)
-                frame2_float64 = frame2.astype(np.double)
-
-                u, v, _ = pyflow.coarse2fine_flow(frame1_float64, frame2_float64,
-                                                  alpha, ratio, minWidth,
-                                                  nOuterFPIterations, nInnerFPIterations, nSORIterations, colType)
-
-                flow = np.stack([u, v], axis=2).astype(np.float32)
-
-                return flow
-
-        else:
-            raise ValueError('Unkown flow method %s' % self.flow_method)
-
         flows = []
         for i in range(0, frames.shape[0] - 1):
-            flows.append(_compute_optic_flow(frames[i], frames[i+1]))
+            flows.append(compute_optic_flow(frames[i], frames[i+1], method=self.flow_method))
         flows = np.stack(flows, axis=0)
 
         return frames, flows, bboxes
@@ -236,7 +190,7 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
         return {
             'frames': frames,
             'speed': speed,
-            'speed_tents': speed_tents_ts,
+            #'speed_tents': speed_tents_ts,
             'direction': direction,
             'mask': mask,
             'bbox': bboxes[0, :]

@@ -12,23 +12,19 @@ class SequenceInputFuncBase(object):
     def __init__(self,
                  dataset_index_filepath,
                  cache_id,
-                 input_path='../',
-                 cache_path='../../',
+                 input_folderpath='../',
+                 cache_folderpath='../../',
                  batch_size=64,
                  num_epochs=-1,
                  shuffle=False,
-                 shuffle_buffer_size=500,
                  n_workers=10,
-                 prefetch_buffer_size=300,
                  max_seq_len=6):
-        self.cache_path = cache_path
+        self.cache_path = cache_folderpath
         self.batch_size = batch_size
         self.num_epochs = num_epochs
-        self.shuffle_bsize = shuffle_buffer_size,
         self.dataset_index_filepath = dataset_index_filepath
-        self.input_path = input_path
+        self.input_path = input_folderpath
         self.n_workers = n_workers
-        self.prefetch_buffer_size=prefetch_buffer_size
         self.cache_id = cache_id
         self.shuffle = shuffle
         self.max_seq_len = max_seq_len
@@ -129,8 +125,6 @@ class SequenceInputFuncBase(object):
         # parse the input
         dataset = tf.data.Dataset.from_tensor_slices((video_paths, annotation_paths, frame_heights, frame_widths))
         print(dataset)
-
-        #TODO shuffle after flat map
 
         dataset = dataset\
             .flat_map(lambda video_path, annotation_path, h, w:
