@@ -14,6 +14,7 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
 
     def __init__(self, mode=tf.estimator.ModeKeys.TRAIN,
                  flow_method='fb',
+                 saliency_method='mb',
                  k=2,
                  fixed_input_dim=200,
                  speed_scalar=4,
@@ -23,9 +24,10 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
         self.fixed_input_dim = fixed_input_dim
         self.flow_method = flow_method
         self.speed_scalar = speed_scalar
+        self.saliency_method = saliency_method
         super(SpeedDirectionSeqInputFunc, self).__init__(**kwargs)
 
-    def parse(self, dataset):
+    def preprocess(self, dataset):
         dataset = dataset.map(lambda frames, bboxes:
                                 tuple(tf.py_func(
                                     self._rescale_on_box1,
@@ -49,9 +51,12 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
                      self._draw_attention_mask,
                      [frames, flows, sailency, bboxes],
                      [tf.float32, tf.float32, tf.float32, tf.float32, tf.float32])),
-                 num_parallel_calls=self.n_workers)\
-            .map(self._fmt_input, num_parallel_calls=self.n_workers)
+                 num_parallel_calls=self.n_workers)
 
+        return dataset
+
+    def format_input(self, dataset):
+        dataset = dataset.map(self._fmt_input, num_parallel_calls=self.n_workers)
         return dataset
 
     def _rescale_on_box1(self, frames, bboxes):
@@ -80,7 +85,7 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
 
         for i in range(0, frames.shape[0] - 1):
             flows.append(compute_optic_flow(frames[i], frames[i+1], method=self.flow_method))
-            saliency.append(compute_saliency(frames[i]))
+            saliency.append(compute_saliency(frames[i], method=self.saliency_method))
 
         flows = np.stack(flows, axis=0)
         saliency = np.stack(saliency, axis=0)
@@ -176,7 +181,7 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
 
         # project speed with tent basiss
         speed_tents_ts = []
-        tent_centers = np.exp(np.arange(0, 5, .45))
+        tent_centers = np.exp(np.arange(0, 5, .45)) - 1.
         for i in range(0, speed.shape[0]):
             tent_basis = []
             for j in range(0, len(tent_centers) - 2):

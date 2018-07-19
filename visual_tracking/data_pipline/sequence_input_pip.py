@@ -18,6 +18,7 @@ class SequenceInputFuncBase(object):
                  num_epochs=-1,
                  shuffle=False,
                  n_workers=10,
+                 shuffle_buffer_size=2000,
                  max_seq_len=6):
         self.cache_path = cache_folderpath
         self.batch_size = batch_size
@@ -27,6 +28,7 @@ class SequenceInputFuncBase(object):
         self.n_workers = n_workers
         self.cache_id = cache_id
         self.shuffle = shuffle
+        self.shuffle_buffersize = shuffle_buffer_size
         self.max_seq_len = max_seq_len
 
     def _group_frames_in_6_pyfunc(self, video_folderpath, annotation_filepath, height, width):
@@ -111,7 +113,10 @@ class SequenceInputFuncBase(object):
 
         return frames, bboxes
 
-    def parse(self, dataset):
+    def preprocess(self, dataset):
+        return dataset
+
+    def format_input(self, dataset):
         return dataset
 
     def __call__(self):
@@ -141,15 +146,16 @@ class SequenceInputFuncBase(object):
                  num_parallel_calls=self.n_workers)
 
         # apply addtional pre-processing
-        dataset = self.parse(dataset)
+        dataset = self.preprocess(dataset)
 
         if self.cache_id is not None:
-            dataset = dataset.cache(filename=path.join(self.cache_path, ('dataset_cache%s' % self.cache_id)))
+            dataset = dataset.cache(filename=path.join(self.cache_path, ('dataset_cache_%s' % self.cache_id)))
 
         if self.shuffle:
-            dataset = dataset.shuffle(buffer_size=2000)
+            dataset = dataset.shuffle(buffer_size=self.shuffle_buffersize)
 
-        dataset = dataset.repeat(self.num_epochs) \
+        dataset = self.format_input(dataset)\
+            .repeat(self.num_epochs) \
             .batch(self.batch_size) \
             .prefetch(2)
 
