@@ -143,19 +143,20 @@ class SequenceInputFuncBase(object):
         # apply addtional pre-processing
         dataset = self.parse(dataset)
 
-        dataset = dataset.cache(filename=path.join(self.cache_path, ('dataset_cache%s' % self.cache_id)))
+        if self.cache_id is not None:
+            dataset = dataset.cache(filename=path.join(self.cache_path, ('dataset_cache%s' % self.cache_id)))
 
         if self.shuffle:
             dataset = dataset.shuffle(buffer_size=2000)
 
-        dataset = dataset.repeat(self.num_epochs)\
-                                           .batch(self.batch_size)\
-                                           .prefetch(2)
+        dataset = dataset.repeat(self.num_epochs) \
+            .batch(self.batch_size) \
+            .prefetch(2)
 
         iterator = dataset.make_one_shot_iterator()
         features = iterator.get_next()
 
-        print('intput pipline initilized, input_shpae=%s, input_dtype=%s' %
+        print('input pipline initilized, input_shpae=%s, input_dtype=%s' %
               (dataset.output_shapes, dataset.output_types))
 
         return features

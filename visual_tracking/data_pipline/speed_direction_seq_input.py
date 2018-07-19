@@ -7,12 +7,13 @@ from skimage import transform, img_as_ubyte, color, util
 
 from visual_tracking.data_pipline.sequence_input_pip import SequenceInputFuncBase
 from visual_tracking.utils.optic_flow import compute_optic_flow
+from visual_tracking.utils.saliency import compute_saliency
 
 
 class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
 
     def __init__(self, mode=tf.estimator.ModeKeys.TRAIN,
-                 flow_method='c2f',
+                 flow_method='fb',
                  k=2,
                  fixed_input_dim=200,
                  speed_scalar=4,
@@ -33,21 +34,21 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
                                 num_parallel_calls=self.n_workers)\
             .map(lambda frames, bboxes:
                               tuple(tf.py_func(
-                                  self._compute_optic_flow,
+                                  self._compute_optic_flow_and_saliency_map,
                                   [frames, bboxes],
-                                  [tf.float32, tf.float32, tf.float32])),
+                                  [tf.float32, tf.float32, tf.float32, tf.float32])),
                               num_parallel_calls=self.n_workers) \
-            .map(lambda frames, flows, bboxes:
+            .map(lambda frames, flows, saliency, bboxes:
                               tuple(tf.py_func(
                                   self._pad_and_crop_to_box1,
-                                  [frames, flows, bboxes],
-                                  [tf.float32, tf.float32, tf.float32])),
+                                  [frames, flows, saliency, bboxes],
+                                  [tf.float32, tf.float32, tf.float32, tf.float32])),
                               num_parallel_calls=self.n_workers) \
-            .map(lambda frames, flows, bboxes:
+            .map(lambda frames, flows, sailency, bboxes:
                  tuple(tf.py_func(
                      self._draw_attention_mask,
-                     [frames, flows, bboxes],
-                     [tf.float32, tf.float32, tf.float32, tf.float32])),
+                     [frames, flows, sailency, bboxes],
+                     [tf.float32, tf.float32, tf.float32, tf.float32, tf.float32])),
                  num_parallel_calls=self.n_workers)\
             .map(self._fmt_input, num_parallel_calls=self.n_workers)
 
@@ -73,15 +74,20 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
 
         return frames_rescaled, bboxes
 
-    def _compute_optic_flow(self, frames, bboxes):
+    def _compute_optic_flow_and_saliency_map(self, frames, bboxes):
         flows = []
+        saliency = []
+
         for i in range(0, frames.shape[0] - 1):
             flows.append(compute_optic_flow(frames[i], frames[i+1], method=self.flow_method))
+            saliency.append(compute_saliency(frames[i]))
+
         flows = np.stack(flows, axis=0)
+        saliency = np.stack(saliency, axis=0)
 
-        return frames, flows, bboxes
+        return frames, flows, saliency, bboxes
 
-    def _pad_and_crop_to_box1(self, frames, flows, bboxes):
+    def _pad_and_crop_to_box1(self, frames, flows, saliency, bboxes):
         _, frame_h, frame_w, _ = frames.shape
 
         # convert bounding boxes into pixel uints
@@ -99,12 +105,13 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
 
         frames_padded = _pad(frames)
         flows_padded = _pad(flows)
+        saliency = np.expand_dims(saliency, axis=3)
+        saliency_padded = _pad(saliency)
 
         bboxes_in_pixels = bboxes_in_pixels + paddings
 
         # crop to box1
         y_min, x_min, y_max, x_max = bboxes_in_pixels[0, :]
-        object_h = y_max - y_min
         object_h = y_max - y_min
         object_w = x_max - x_min
         y_center = (y_min + y_max) / 2.
@@ -121,6 +128,7 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
 
         frames_cropped = _crop(frames_padded)
         flows_cropped = _crop(flows_padded)
+        saliency_cropped = _crop(saliency_padded)
 
         # re-calculate bounding boxes
         bbox_cropped = np.zeros_like(bboxes_in_pixels, dtype=np.float32)
@@ -142,28 +150,31 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
 
         bbox_cropped = bbox_cropped / (self.fixed_input_dim - 1) # scale it to 0 to 1
 
-        return frames_cropped, flows_cropped, bbox_cropped
+        return frames_cropped, flows_cropped, np.squeeze(saliency_cropped), bbox_cropped
 
-    def _draw_attention_mask(self, frames, flows, bboxes):
+    def _draw_attention_mask(self, frames, flows, saliency, bboxes):
         y_min, x_min, y_max, x_max = np.round(bboxes[0, :] * (self.fixed_input_dim - 1)).astype(np.int32)
 
         mask = np.zeros_like(frames[0, :, :, 0], dtype=np.float32)
         mask[y_min:y_max, x_min:x_max] = 1
 
-        return frames, flows, mask, bboxes
+        return frames, flows, saliency, mask, bboxes
 
-    def _fmt_input(self, frames, flows, mask, bboxes):
+    def _fmt_input(self, frames, flows, saliency, mask, bboxes):
         frames.set_shape([self.max_seq_len, self.fixed_input_dim, self.fixed_input_dim, 3])
         flows.set_shape([self.max_seq_len - 1, self.fixed_input_dim, self.fixed_input_dim, 2])
+        saliency.set_shape([self.max_seq_len - 1, self.fixed_input_dim, self.fixed_input_dim])
         mask.set_shape([self.fixed_input_dim, self.fixed_input_dim])
         bboxes.set_shape([self.max_seq_len, 4])
 
+        # computes speed and direction from opticflow
         flow_x = flows[:, :, :, 0]
         flow_y = flows[:, :, :, 1]
 
         speed = tf.norm(flows, ord=2, axis=3)
         direction = tf.atan2(flow_y, flow_x)
 
+        # project speed with tent basiss
         speed_tents_ts = []
         tent_centers = np.exp(np.arange(0, 5, .45))
         for i in range(0, speed.shape[0]):
@@ -190,7 +201,8 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
         return {
             'frames': frames,
             'speed': speed,
-            #'speed_tents': speed_tents_ts,
+            'speed_tents': speed_tents_ts,
+            'saliency': saliency,
             'direction': direction,
             'mask': mask,
             'bbox': bboxes[0, :]
