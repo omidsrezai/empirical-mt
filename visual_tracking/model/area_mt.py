@@ -207,6 +207,10 @@ class AreaMT(object):
             y = tf.identity(conv2d(x)) # fixes no out_bound bug
 
         if dp > 0.:
-            y = tf.layers.dropout(y)
+            y = tf.layers.dropout(y, rate=dp)
 
         return y
+
+    def _dropout_per_channel(self, x):
+        noise_shape = tf.concat([tf.shape(x)[0:1], [1, 1, 64]], axis=0)
+        return tf.layers.dropout(x, rate=0.5, noise_shape=noise_shape)
