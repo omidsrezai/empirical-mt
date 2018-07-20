@@ -18,7 +18,7 @@ class SequenceInputFuncBase(object):
                  num_epochs=-1,
                  shuffle=False,
                  n_workers=10,
-                 shuffle_buffer_size=2000,
+                 shuffle_buffer_size=200,
                  max_seq_len=6,
                  **kv_pairs):
         self.cache_path = cache_folderpath
@@ -33,8 +33,8 @@ class SequenceInputFuncBase(object):
         self.max_seq_len = max_seq_len
         self.kv_pairs = kv_pairs
 
-    def _group_frames_in_6_pyfunc(self, video_folderpath, annotation_filepath, height, width):
-        # change to relative path
+    def _group_frames_6_pyfunc(self, video_folderpath, annotation_filepath, height, width):
+        # change to absolute path
         video_folderpath_abs = path.join(self.input_path, video_folderpath)
         annotation_filepath_abs = path.join(self.input_path, annotation_filepath)
 
@@ -143,7 +143,7 @@ class SequenceInputFuncBase(object):
         dataset = dataset\
             .flat_map(lambda video_path, annotation_path, h, w:
                                                  tf.data.Dataset.from_tensor_slices(tuple(tf.py_func(
-                                                     self._group_frames_in_6_pyfunc,
+                                                     self._group_frames_6_pyfunc,
                                                      [video_path, annotation_path, h, w],
                                                      [tf.string, tf.float32]))))\
             .shuffle(buffer_size=30000)\
@@ -154,7 +154,7 @@ class SequenceInputFuncBase(object):
                                         [tf.float32, tf.float32])),
                  num_parallel_calls=self.n_workers)
 
-        # apply addtional pre-processing
+        # apply additional pre-processing
         dataset = self.preprocess(dataset)
 
         if self.cache_id is not None:

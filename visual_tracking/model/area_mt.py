@@ -41,7 +41,7 @@ class AreaMT(object):
 
             excitatory = self._excitatory(direction_tun, attention_tun, speed_input)
             dir_selective_sup = self._direction_selective_suppressive(direction_tun, attention_tun, speed_input_tents)
-            non_dir_sel_sup = self._non_direction_selective_suppressive(speed_input_tents, attention_tun)
+            non_dir_sel_sup = self._non_direction_selective_suppressive(attention_tun, speed_input_tents)
 
             mt_activity = self._integrate_components(dir_selective_sup, excitatory, non_dir_sel_sup)
 
@@ -56,11 +56,11 @@ class AreaMT(object):
         with tf.name_scope('attention_tun'):
             saliencymap_repeats = tf.tile(tf.expand_dims(saliencymap, axis=3), [1, 1, 1, self.n_chann])
 
-            attention_gain_shape = saliencymap.get_shape().as_list()[1:3] + [self.n_chann]
+            attention_gain_shape = saliencymap.get_shape().as_list()[1:3] + [1]
             attention_gains = tf.reshape(tf.constant(self.attention_gains), [1, 1, self.n_chann])
             attention_gains = tf.tile(attention_gains, attention_gain_shape)
 
-            attention_tun = (saliencymap_repeats * attention_gains) + (1 - saliencymap_repeats)
+            attention_tun = tf.multiply(saliencymap_repeats, attention_gains) + (1 - saliencymap_repeats)
             attention_tun = tf.layers.batch_normalization(attention_tun)
 
             feature_maps_summary('attentin_tunning',

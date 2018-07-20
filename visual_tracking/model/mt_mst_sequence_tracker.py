@@ -15,10 +15,12 @@ K.set_session(tf_sess)
 
 class MTMSTSeqTracker(ALOV300ModelBase):
     def __init__(self, mt_params_path,
+                 mt_attention_gain_path,
                  speed_scalar,
                  n_chann=64,
                  **kwargs):
         self.mt_params = pickle.load(open(mt_params_path, "rb"))
+        self.mt_attention_gains = np.load(mt_attention_gain_path).astype(np.float32)
         self.n_chann = n_chann
         self.speed_scalar = speed_scalar
         super(MTMSTSeqTracker, self).__init__(**kwargs)
@@ -42,34 +44,20 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              tf.expand_dims(avg_direction, axis=3),
                              max_outputs=self.max_im_outputs)
 
-        # TODO do this in input pipline
         with tf.name_scope('speed_input_tents'):
-            tent_centers = np.exp(np.arange(0, 5, .45))
-
-            def _project_tent_basis(x):
-                tent_basis = []
-
-                for i in range(0, len(tent_centers) - 2):
-                    _left = tent_centers[i]
-                    _center = tent_centers[i + 1]
-                    _right = tent_centers[i + 2]
-
-                    x = x * self.speed_scalar
-                    y_left = (x - _left) / (_center - _left)
-                    y_right = (_right - x) / (_right - _center)
-
-                    y = tf.where((x >= _left) & (x <= _center), y_left, tf.zeros_like(x)) \
-                        + tf.where((x >= _center) & (x <= _right), y_right, tf.zeros_like(x))
-
-                    tent_basis.append(y)
-
-                return tf.stack(tent_basis, axis=3)
-
-            speed_input_tents = self._time_map(speed_inputs, _project_tent_basis, 'project_tents')
+            speed_input_tents = tf.identity(features['speed_tents'])
 
             tf.summary.histogram('speed_input_tents', direction_input)
             tf.summary.image('speed_input_tents_l1_time_0',
                              tf.norm(speed_input_tents[:, 0], axis=3, ord=1, keep_dims=True),
+                             max_outputs=self.max_im_outputs)
+
+        with tf.name_scope('saliency'):
+            saliencymaps = tf.identity(features['saliency'])
+
+            tf.summary.histogram('saliency', saliencymaps)
+            tf.summary.image('saliency_maps_t5',
+                             tf.expand_dims(saliencymaps[:, -1, :, :], axis=3),
                              max_outputs=self.max_im_outputs)
 
         with tf.variable_scope('mt_over_time'):
@@ -78,8 +66,10 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              empirical_excitatory_params=self.mt_params,
                              speed_scalar=self.speed_scalar,
                              chann_sel_dp=0.,
-                             activity_dp=0.)
-            mt_activity = self._time_map((speed_inputs, speed_input_tents, direction_input),
+                             activity_dp=0.,
+                             attention_gains=self.mt_attention_gains,
+                             conv_chann=self.n_chann)
+            mt_activity = self._time_map((speed_inputs, speed_input_tents, direction_input, saliencymaps),
                                          area_mt,
                                          name='area_mt')
 
@@ -103,24 +93,17 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              tf.norm(mst_average, ord=2, axis=3, keep_dims=True),
                              max_outputs=self.max_im_outputs)
 
-        with tf.variable_scope('add_prev_bbox'):
-            prev_bbox = tf.expand_dims(features['mask'], axis=3)
-            prev_bbox = tf.layers.average_pooling2d(prev_bbox, pool_size=(19, 19), strides=(19, 19))
-            tf.summary.image('mask', prev_bbox, max_outputs=self.max_im_outputs)
+        conv1 = conv2d(mst_average,
+                                    kernel_size=(3, 3),
+                                    filters=64,
+                                    max_pool=None,
+                                    strides=(1, 1),
+                                    batch_norm=True,
+                                    dropout=0.,
+                                    act=tf.nn.elu,
+                                    name='conv')
 
-            masked = tf.concat([mst_average, prev_bbox], axis=3)
-
-            mst_average_masked = conv2d(masked,
-                                        kernel_size=(3, 3),
-                                        filters=64,
-                                        max_pool=None,
-                                        strides=(1, 1),
-                                        batch_norm=True,
-                                        dropout=0.,
-                                        act=tf.nn.elu,
-                                        name='conv_with_mask')
-
-        dense1 = dense(tf.layers.flatten(mst_average_masked),
+        dense1 = dense(tf.layers.flatten(conv1),
                        units=256,
                        name='dense1',
                        act=tf.nn.elu,

@@ -55,13 +55,7 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
                                   self._pad_and_crop_to_box1,
                                   [frames, flows, saliency, bboxes],
                                   [tf.float32, tf.float32, tf.float32, tf.float32])),
-                              num_parallel_calls=self.n_workers) \
-            .map(lambda frames, flows, sailency, bboxes:
-                 tuple(tf.py_func(
-                     self._draw_attention_mask,
-                     [frames, flows, sailency, bboxes],
-                     [tf.float32, tf.float32, tf.float32, tf.float32, tf.float32])),
-                 num_parallel_calls=self.n_workers)
+                              num_parallel_calls=self.n_workers)
 
         return dataset
 
@@ -175,19 +169,10 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
 
         return frames_cropped, flows_cropped, np.squeeze(saliency_cropped), bbox_cropped
 
-    def _draw_attention_mask(self, frames, flows, saliency, bboxes):
-        y_min, x_min, y_max, x_max = np.round(bboxes[0, :] * (self.fixed_input_dim - 1)).astype(np.int32)
-
-        mask = np.zeros_like(frames[0, :, :, 0], dtype=np.float32)
-        mask[y_min:y_max, x_min:x_max] = 1
-
-        return frames, flows, saliency, mask, bboxes
-
-    def _fmt_input(self, frames, flows, saliency, mask, bboxes):
+    def _fmt_input(self, frames, flows, saliency, bboxes):
         frames.set_shape([self.max_seq_len, self.fixed_input_dim, self.fixed_input_dim, 3])
         flows.set_shape([self.max_seq_len - 1, self.fixed_input_dim, self.fixed_input_dim, 2])
         saliency.set_shape([self.max_seq_len - 1, self.fixed_input_dim, self.fixed_input_dim])
-        mask.set_shape([self.fixed_input_dim, self.fixed_input_dim])
         bboxes.set_shape([self.max_seq_len, 4])
 
         # computes speed and direction from opticflow
@@ -199,7 +184,7 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
 
         # project speed with tent basiss
         speed_tents_ts = []
-        tent_centers = np.exp(np.arange(0, 5, .45)) - 1.
+        tent_centers = np.exp(np.arange(0, 5, .45))
         for i in range(0, speed.shape[0]):
             tent_basis = []
             for j in range(0, len(tent_centers) - 2):
@@ -227,6 +212,5 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
             'speed_tents': speed_tents_ts,
             'saliency': saliency,
             'direction': direction,
-            'mask': mask,
             'bbox': bboxes[0, :]
         }, bboxes[-1, :]
