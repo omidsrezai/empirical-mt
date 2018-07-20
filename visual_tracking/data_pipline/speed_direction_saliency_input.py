@@ -18,6 +18,8 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
                  k=2,
                  fixed_input_dim=200,
                  speed_scalar=4,
+                 optic_flow_cache_id=None,
+                 saliency_map_cache_id=None,
                  **kwargs):
         self.mode = mode
         self.k = k
@@ -25,6 +27,8 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
         self.flow_method = flow_method
         self.speed_scalar = speed_scalar
         self.saliency_method = saliency_method
+        self.optic_flow_cache_id = optic_flow_cache_id
+        self.saliency_map_cache_id = saliency_map_cache_id
         super(SpeedDirectionSeqInputFunc, self).__init__(**kwargs)
 
     def preprocess(self, dataset):
@@ -36,10 +40,16 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
                                 num_parallel_calls=self.n_workers)\
             .map(lambda frames, bboxes:
                               tuple(tf.py_func(
-                                  self._compute_optic_flow_and_saliency_map,
+                                  self._compute_saliency_map,
                                   [frames, bboxes],
-                                  [tf.float32, tf.float32, tf.float32, tf.float32])),
+                                  [tf.float32, tf.float32, tf.float32])),
                               num_parallel_calls=self.n_workers) \
+            .map(lambda frames, saliencymaps, bboxes:
+                 tuple(tf.py_func(
+                     self._compute_optic_flow,
+                     [frames, saliencymaps, bboxes],
+                     [tf.float32, tf.float32, tf.float32, tf.float32])),
+                 num_parallel_calls=self.n_workers) \
             .map(lambda frames, flows, saliency, bboxes:
                               tuple(tf.py_func(
                                   self._pad_and_crop_to_box1,
@@ -79,18 +89,26 @@ class SpeedDirectionSeqInputFunc(SequenceInputFuncBase):
 
         return frames_rescaled, bboxes
 
-    def _compute_optic_flow_and_saliency_map(self, frames, bboxes):
+    def _compute_optic_flow(self, frames, saliency, bboxes):
         flows = []
-        saliency = []
-
         for i in range(0, frames.shape[0] - 1):
             flows.append(compute_optic_flow(frames[i], frames[i+1], method=self.flow_method))
-            saliency.append(compute_saliency(frames[i], method=self.saliency_method))
-
         flows = np.stack(flows, axis=0)
-        saliency = np.stack(saliency, axis=0)
 
         return frames, flows, saliency, bboxes
+
+    def _compute_saliency_map(self, frames, bboxes):
+        if self.kv_pairs['saliencymaps_folderpath'] is not None:
+            saliency = frames[:, :, :, -1] # saliency maps are loaded upstream and concated as 4-th channel
+            frames = frames[:, :, :, 0:3]
+        else:
+            saliency = []
+
+            for i in range(0, frames.shape[0] - 1):
+                saliency.append(compute_saliency(frames[i], method=self.saliency_method))
+            saliency = np.stack(saliency, axis=0)
+
+        return frames, saliency, bboxes
 
     def _pad_and_crop_to_box1(self, frames, flows, saliency, bboxes):
         _, frame_h, frame_w, _ = frames.shape

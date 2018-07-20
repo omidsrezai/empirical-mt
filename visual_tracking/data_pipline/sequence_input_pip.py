@@ -19,7 +19,8 @@ class SequenceInputFuncBase(object):
                  shuffle=False,
                  n_workers=10,
                  shuffle_buffer_size=2000,
-                 max_seq_len=6):
+                 max_seq_len=6,
+                 **kv_pairs):
         self.cache_path = cache_folderpath
         self.batch_size = batch_size
         self.num_epochs = num_epochs
@@ -30,6 +31,7 @@ class SequenceInputFuncBase(object):
         self.shuffle = shuffle
         self.shuffle_buffersize = shuffle_buffer_size
         self.max_seq_len = max_seq_len
+        self.kv_pairs = kv_pairs
 
     def _group_frames_in_6_pyfunc(self, video_folderpath, annotation_filepath, height, width):
         # change to relative path
@@ -107,6 +109,13 @@ class SequenceInputFuncBase(object):
             if len(frame.shape) == 2:
                 frame = color.gray2rgb(frame)
                 tf.logging.info('converting %s from grayscale to rgb', fp)
+
+            # load saliency maps and concatenate it to the 4th channel
+            if 'saliencymaps_folderpath' in self.kv_pairs:
+                saliencymap_path = fp.replace('imagedata++', self.kv_pairs['saliencymaps_folderpath'])
+                saliencymap = img_as_float32(io.imread(saliencymap_path))
+                frame = np.concatenate([frame, np.expand_dims(saliencymap, axis=2)], axis=2)
+
             frames.append(frame)
 
         frames = np.stack(frames, axis=0)
