@@ -28,6 +28,7 @@ def main(argv=None):
     parser.add_argument('--desc', action='store', type=str, required=True)
     parser.add_argument('--short-desc', action='store', type=str, required=True)
     parser.add_argument('--train-shuffle-buffer-size', action='store', type=int, default=100)
+    parser.add_argument('--model-name', action='store', type=str, default=None)
 
     # dataset arguments
     parser.add_argument('--fixed-input-dim', action='store', type=int, default=76)
@@ -66,8 +67,15 @@ def main(argv=None):
                                                shuffle=False,
                                                **saliency_configs)
 
+    cont_train_flag = False
+
     timestamp = datetime.fromtimestamp(time()).strftime('%m-%d-%H-%M-%S')
-    model_dir = '../../%s/alov300/%s_%s' % (args.tensorboard_dir, args.short_desc, timestamp)
+    if args.model_name is not None:
+        cont_train_flag = True
+        model_name = args.model_name
+    else:
+        model_name = '%s_%s' % (args.short_desc, timestamp)
+    model_dir = '../../%s/alov300/%s' % (args.tensorboard_dir, model_name)
 
     model_fn = MTMSTSeqTracker(mt_params_path='../../params_MT_654.pkl',
                                mt_attention_gain_path='../../attention_gains.npy',
@@ -88,7 +96,7 @@ def main(argv=None):
 
         epochs += 1
 
-        if epochs == 5:
+        if epochs == 5 and not cont_train_flag:
             # log training metadata to a file
             with open("logs/logs.txt", "a") as log:
                 log.write("%s: %s\n\n" % (model_dir, args))
