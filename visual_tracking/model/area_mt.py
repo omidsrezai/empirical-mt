@@ -6,7 +6,7 @@ from keras.constraints import NonNeg
 
 from surround.smart_example import SmartInput as TentLinearComb, AddBiasNonlinear, SmartConv2D as SelConv2d
 from tuning import SpeedTuning, DirectionTuning
-from visual_tracking.model.layer_tools import conv2d
+from visual_tracking.model.layer_tools import conv2d, chann_sel_conv2d
 from visual_tracking.utils.keras_utils import NonPos
 from visual_tracking.utils.tensorboad_utils import feature_maps_summary
 
@@ -40,8 +40,8 @@ class AreaMT(object):
 
             mt_activity = self._integrate_components(dir_selective_sup, excitatory, non_dir_sel_sup)
 
-            if (not self._allocated):
-                self._log_conv_kernels()
+            #if (not self._allocated):
+            #    self._log_conv_kernels()
 
         self._allocated = True # flags the variables have been allocated
 
@@ -194,6 +194,7 @@ class AreaMT(object):
                                      tf.expand_dims(tf.expand_dims(normed, axis=2), axis=0))
 
     def _15x15_chann_sel_conv2d(self, x, k_constraint, dp=0.):
+        '''
         with tf.variable_scope('chann_sel_conv2d'):
             conv2d = SelConv2d(self.n_chann,
                                (15, 15),
@@ -205,6 +206,13 @@ class AreaMT(object):
                                kernel_initializer='glorot_uniform')
 
             y = tf.identity(conv2d(x)) # fixes no out_bound bug
+
+        '''
+        y = chann_sel_conv2d(x, constraint=k_constraint,
+                             filters=self.n_chann,
+                             kernel_size=(15, 15),
+                             kernel_summary=not self._allocated,
+                             name='chann_sel_conv2d')
 
         if dp > 0.:
             y = tf.layers.dropout(y, rate=dp)

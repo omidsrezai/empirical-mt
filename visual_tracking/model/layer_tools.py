@@ -87,3 +87,68 @@ def conv2d(x, kernel_size, filters, strides, name,
                 tf.summary.scalar('%s_l2_norm' % t, tf.norm(tf.get_variable('conv2d/%s' % t)))
 
     return conv
+
+
+def chann_sel_conv2d(x, kernel_size, filters,
+                     constraint,
+                     max_im_outputs=64,
+                     k_init_uniform=True,
+                     activity_summary=True,
+                     kernel_summary=True,
+                     name='chann_sel_conv2d'):
+    with tf.variable_scope(name) as scope:
+        n_in_chann = x.get_shape().as_list()[3]
+
+        kernel = tf.get_variable('kernel',
+                                 shape=(15, 15, n_in_chann, filters),
+                                 initializer=tf.contrib.layers.xavier_initializer_conv2d(k_init_uniform),
+                                 dtype=tf.float32,
+                                 constraint=constraint)
+
+        kernel_pooled = tf.reduce_sum(tf.abs(kernel), axis=(0, 1))
+        kernel_pooled_centered = kernel_pooled - tf.reduce_mean(kernel_pooled, axis=0)
+        #kernel_pooled_centered = tf.layers.batch_normalization(kernel_pooled)
+        kernel_in_gate = tf.nn.sigmoid(kernel_pooled_centered)
+
+        if not tf.get_variable_scope().reuse:
+            in_gate_l1_reg = tf.reduce_mean(kernel_in_gate)
+            tf.summary.scalar('in_gate_l1_loss', in_gate_l1_reg)
+            tf.losses.add_loss(in_gate_l1_reg, loss_collection= tf.GraphKeys.REGULARIZATION_LOSSES)
+
+        kernel_in_mask = tf.expand_dims(tf.expand_dims(kernel_in_gate, axis=0), axis=1)
+        kernel_in_mask = tf.tile(kernel_in_mask, list(kernel_size) + [1, 1])
+
+        kernel_masked = kernel * kernel_in_mask
+        conv = tf.nn.conv2d(x, kernel_masked,
+                            strides=[1, 1, 1, 1],
+                            padding='SAME')
+
+        if activity_summary:
+            tf.summary.histogram('%s_activations' % name, conv)
+            tf.summary.image('%s_feature_maps_l2_norm' % name,
+                             tf.norm(conv, axis=3, ord=2, keep_dims=True),
+                             max_outputs=max_im_outputs)
+
+        if kernel_summary:
+            tf.summary.histogram('kernel', kernel)
+            tf.summary.scalar('kernel', tf.norm(kernel, ord=2))
+
+            with tf.name_scope('visualize_selected_kernels'):
+                for i in range(filters):
+                    weights = kernel_pooled[:, i]
+                    selected_in_kernel = kernel[:, :, tf.argmax(weights), i]
+
+                    normed = tf.abs(selected_in_kernel)
+                    normed = (normed - tf.reduce_min(normed)) / (tf.reduce_max(normed) - tf.reduce_min(normed))
+
+                    tf.summary.image('out_chann%s_kernel' % i,
+                                     tf.expand_dims(tf.expand_dims(normed, axis=2), axis=0),
+                                     max_outputs=1)
+
+            tf.summary.histogram('kernel_pooled_centered', kernel_pooled_centered)
+            tf.summary.histogram('kernel_in_gates', kernel_in_gate)
+            tf.summary.image('kernel_in_gates',
+                            tf.expand_dims(tf.expand_dims(kernel_in_gate, axis=2), axis=0),
+                            max_outputs=1)
+
+    return conv

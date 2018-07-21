@@ -75,7 +75,7 @@ class MTMSTSeqTracker(ALOV300ModelBase):
 
         with tf.variable_scope('mt_over_time'):
             area_mt = AreaMT(max_im_outputs=4,
-                             n_chann=self.n_chann,
+                             n_chann=64,
                              empirical_excitatory_params=self.mt_params,
                              speed_scalar=self.speed_scalar,
                              chann_sel_dp=0.,
@@ -142,8 +142,6 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                       act=tf.nn.sigmoid,
                       batch_norm=False,
                       kernel_l2_reg_scale=0.)
-
-        pbbox = tf.layers.batch_normalization(pbbox)
 
         return self._compile(mode=mode,
                              frame1=features['frames'][:, 0],
