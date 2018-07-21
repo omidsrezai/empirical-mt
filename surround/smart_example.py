@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from keras.layers import Input, Dropout, merge, Dense, Lambda, Flatten, Reshape
 from keras.layers.convolutional import Convolution2D, MaxPooling2D, AveragePooling3D, Conv2D
-from keras.constraints import NonNeg, NonPos 
+from keras.constraints import NonNeg
 from keras import backend as K
 from keras import activations
 from keras import initializers
