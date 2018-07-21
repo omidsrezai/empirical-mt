@@ -38,7 +38,7 @@ def main(argv=None):
     tf.logging.debug('args: %s' % args)
 
     input_fn_train = SpeedDirectionSeqInputFunc(dataset_index_filepath='../../data/alov300++/alov300_train.csv',
-                                                input_path='../../',
+                                                input_folderpath='../../',
                                                 fixed_input_dim=args.fixed_input_dim,
                                                 batch_size=args.train_batch_size,
                                                 num_epochs=1,
@@ -47,7 +47,7 @@ def main(argv=None):
                                                 shuffle=True)
 
     input_fn_eval = SpeedDirectionSeqInputFunc(dataset_index_filepath='../../data/alov300++/alov300_test.csv',
-                                               input_path='../../',
+                                               input_folderpath='../../',
                                                fixed_input_dim=args.fixed_input_dim,
                                                batch_size=args.test_batch_size,
                                                num_epochs=1,
