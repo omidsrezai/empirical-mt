@@ -75,7 +75,7 @@ class MTMSTSeqTracker(ALOV300ModelBase):
 
         with tf.variable_scope('mt_over_time'):
             area_mt = AreaMT(max_im_outputs=4,
-                             n_chann=self.n_chann,
+                             n_chann=8,
                              empirical_excitatory_params=self.mt_params,
                              speed_scalar=self.speed_scalar,
                              chann_sel_dp=0.,
@@ -90,7 +90,7 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              max_outputs=self.max_im_outputs)
 
         with tf.variable_scope('mst_over_time'):
-            area_mst = AreaMST(n_chann=64, max_im_outputs=4, dropout=0.)
+            area_mst = AreaMST(n_chann=8, max_im_outputs=4, dropout=0.)
             mst_activity = self._time_map(mt_activity, area_mst, 'area_mst')
 
             tf.summary.histogram('mst_activity', mst_activity)
@@ -126,7 +126,7 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                        name='dense1',
                        act=tf.nn.elu,
                        batch_norm=True,
-                       kernel_l2_reg_scale=0.01)
+                       kernel_l2_reg_scale=0.0)
 
         dense2 = dense(dense1,
                        units=64,
@@ -142,8 +142,6 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                       act=tf.nn.sigmoid,
                       batch_norm=False,
                       kernel_l2_reg_scale=0.)
-
-        pbbox = tf.layers.batch_normalization(pbbox)
 
         return self._compile(mode=mode,
                              frame1=features['frames'][:, 0],
