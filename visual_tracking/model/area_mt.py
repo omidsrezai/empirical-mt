@@ -228,7 +228,7 @@ class AreaMT(object):
 
     def _15x15_chann_sel_conv2d(self, x, k_constraint, dp=0.):
         with tf.variable_scope('chann_sel_conv2d'):
-            conv2d = SelConv2d(self.conv_chann,
+            conv2d = SelConv2d(self.n_chann,
                                (15, 15),
                                activation=None,
                                use_bias=False,
