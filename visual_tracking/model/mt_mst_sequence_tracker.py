@@ -46,8 +46,7 @@ class MTMSTSeqTracker(ALOV300ModelBase):
 
         with tf.name_scope('speed_input_tents'):
             speed_input_tents = tf.identity(features['speed_tents'])
-
-            tf.summary.histogram('speed_input_tents', direction_input)
+            tf.summary.histogram('speed_input_tents', speed_input_tents)
             tf.summary.image('speed_input_tents_l1_time_0',
                              tf.norm(speed_input_tents[:, 0], axis=3, ord=1, keep_dims=True),
                              max_outputs=self.max_im_outputs)
@@ -62,13 +61,13 @@ class MTMSTSeqTracker(ALOV300ModelBase):
 
         with tf.variable_scope('mt_over_time'):
             area_mt = AreaMT(max_im_outputs=4,
-                             n_chann=self.n_chann,
+                             n_chann=32,
                              empirical_excitatory_params=self.mt_params,
                              speed_scalar=self.speed_scalar,
                              chann_sel_dp=0.,
                              activity_dp=0.,
                              attention_gains=self.mt_attention_gains,
-                             conv_chann=self.n_chann)
+                             conv_chann=32)
             mt_activity = self._time_map((speed_inputs, speed_input_tents, direction_input, saliencymaps),
                                          area_mt,
                                          name='area_mt')
@@ -85,42 +84,43 @@ class MTMSTSeqTracker(ALOV300ModelBase):
             tf.summary.histogram('mst_activity', mst_activity)
 
         with tf.variable_scope('avg_over_time'):
-            mst_average = tf.reduce_mean(mst_activity, axis=1)
-            mst_average = tf.layers.batch_normalization(mst_average)
+            time_pooled = tf.reduce_mean(mst_activity, axis=1)
+            time_pooled = tf.layers.batch_normalization(time_pooled)
 
-            tf.summary.histogram('mst_activity_time_avg', mst_average)
+            tf.summary.histogram('mst_activity_time_avg', time_pooled)
             tf.summary.image('mst_activity_time_avg',
-                             tf.norm(mst_average, ord=2, axis=3, keep_dims=True),
+                             tf.norm(time_pooled, ord=2, axis=3, keep_dims=True),
                              max_outputs=self.max_im_outputs)
 
-        conv1 = conv2d(mst_average,
-                                    kernel_size=(3, 3),
-                                    filters=64,
-                                    max_pool=None,
-                                    strides=(1, 1),
-                                    batch_norm=True,
-                                    dropout=0.,
-                                    act=tf.nn.elu,
-                                    name='conv')
+        conv1 = conv2d(time_pooled,
+                        kernel_size=(3, 3),
+                        filters=128,
+                        max_pool=None,
+                        strides=(1, 1),
+                        batch_norm=True,
+                        dropout=0.,
+                        act=tf.nn.elu,
+                        name='conv',
+                        kernel_l2_reg_scale=0.01)
 
         dense1 = dense(tf.layers.flatten(conv1),
                        units=256,
                        name='dense1',
                        act=tf.nn.elu,
                        batch_norm=True,
-                       kernel_l2_reg_scale=0.)
+                       kernel_l2_reg_scale=0.01)
 
         dense2 = dense(dense1,
                        units=64,
                        name='dense2',
                        act=tf.nn.elu,
                        batch_norm=True,
-                       kernel_l2_reg_scale=0.)
+                       kernel_l2_reg_scale=0.01)
 
         pbbox = dense(dense2,
                       units=4,
                       name='predictions',
-                      act=tf.nn.sigmoid,
+                      act=lambda x: (3 * tf.nn.sigmoid(x)) - 1,
                       batch_norm=False,
                       kernel_l2_reg_scale=0.)
 
