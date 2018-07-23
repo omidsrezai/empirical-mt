@@ -91,6 +91,7 @@ def conv2d(x, kernel_size, filters, strides, name,
 
 def chann_sel_conv2d(x, kernel_size, filters,
                      constraint,
+                     kernel_l2_reg_scale=0.,
                      max_im_outputs=64,
                      k_init_uniform=True,
                      activity_summary=True,
@@ -103,17 +104,26 @@ def chann_sel_conv2d(x, kernel_size, filters,
                                  shape=(15, 15, n_in_chann, filters),
                                  initializer=tf.contrib.layers.xavier_initializer_conv2d(k_init_uniform),
                                  dtype=tf.float32,
-                                 constraint=constraint)
+                                 constraint=constraint,
+                                 regularizer=tf.contrib.layers.l2_regularizer(kernel_l2_reg_scale))
 
-        kernel_pooled = tf.reduce_sum(tf.abs(kernel), axis=(0, 1))
-        kernel_pooled_centered = kernel_pooled - tf.reduce_mean(kernel_pooled, axis=0)
+
+        #kernel_pooled = tf.reduce_sum(tf.abs(kernel), axis=(0, 1))
+        #kernel_pooled_centered = kernel_pooled - tf.reduce_max(kernel_pooled, axis=0)
         #kernel_pooled_centered = tf.layers.batch_normalization(kernel_pooled)
-        kernel_in_gate = tf.nn.sigmoid(kernel_pooled_centered)
+        #kernel_in_gate = tf.nn.sigmoid(kernel_pooled_centered)
+        #kernel_in_gate = tf.exp(tf.div(kernel_pooled_centered, 0.09))
 
+        kernel_pooled = _compute_conv_kernel_gradient_norm(kernel)
+        kernel_pooled_centered = -kernel_pooled + tf.reduce_min(kernel_pooled, axis=0)
+        kernel_in_gate = tf.exp(tf.div(kernel_pooled_centered, 0.000001))
+
+        '''
         if not tf.get_variable_scope().reuse:
             in_gate_l1_reg = tf.reduce_mean(kernel_in_gate)
             tf.summary.scalar('in_gate_l1_loss', in_gate_l1_reg)
             tf.losses.add_loss(in_gate_l1_reg, loss_collection= tf.GraphKeys.REGULARIZATION_LOSSES)
+        '''
 
         kernel_in_mask = tf.expand_dims(tf.expand_dims(kernel_in_gate, axis=0), axis=1)
         kernel_in_mask = tf.tile(kernel_in_mask, list(kernel_size) + [1, 1])
@@ -136,7 +146,7 @@ def chann_sel_conv2d(x, kernel_size, filters,
             with tf.name_scope('visualize_selected_kernels'):
                 for i in range(filters):
                     weights = kernel_pooled[:, i]
-                    selected_in_kernel = kernel[:, :, tf.argmax(weights), i]
+                    selected_in_kernel = kernel[:, :, tf.argmin(weights), i]
 
                     normed = tf.abs(selected_in_kernel)
                     normed = (normed - tf.reduce_min(normed)) / (tf.reduce_max(normed) - tf.reduce_min(normed))
@@ -152,3 +162,12 @@ def chann_sel_conv2d(x, kernel_size, filters,
                             max_outputs=1)
 
     return conv
+
+def _compute_conv_kernel_gradient_norm(k):
+    k_trans = tf.transpose(k, perm=(3, 0, 1, 2))
+    dy, dx = tf.image.image_gradients(k_trans)
+
+    gradients = tf.square(dy) + tf.square(dx)
+    gradients_per_in_chann = tf.reduce_sum(tf.square(gradients), axis=(1, 2))
+
+    return tf.transpose(gradients_per_in_chann)

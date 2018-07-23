@@ -9,10 +9,11 @@ K.set_session(tf_sess)
 
 class AreaMST(object):
 
-    def __init__(self, n_chann, max_im_outputs=64, dropout=0.):
+    def __init__(self, n_chann, max_im_outputs=64, dropout=0., l2_reg_scale=0.):
         self.max_im_outputs = max_im_outputs
         self._allocated = False
         self.n_chann = n_chann
+        self.l2_reg_scale = l2_reg_scale
         self.dropout = dropout
 
     def __call__(self, mt_activity):
@@ -26,7 +27,7 @@ class AreaMST(object):
                                 batch_norm=True,
                                 act=tf.nn.relu,
                                 dropout=self.dropout,
-                                kernel_l2_reg_scale=0.,
+                                kernel_l2_reg_scale=self.l2_reg_scale,
                                 max_pool=None,
                                 k_init_uniform=True,
                                 kernel_summary=not self._allocated)
@@ -40,7 +41,7 @@ class AreaMST(object):
                                 batch_norm=True,
                                 act=tf.nn.relu,
                                 dropout=self.dropout,
-                                kernel_l2_reg_scale=0.,
+                                kernel_l2_reg_scale=self.l2_reg_scale,
                                 max_pool=(3, 3),
                                 k_init_uniform=True,
                                 kernel_summary=not self._allocated)

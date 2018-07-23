@@ -75,11 +75,12 @@ class MTMSTSeqTracker(ALOV300ModelBase):
 
         with tf.variable_scope('mt_over_time'):
             area_mt = AreaMT(max_im_outputs=4,
-                             n_chann=64,
+                             n_chann=32,
                              empirical_excitatory_params=self.mt_params,
                              speed_scalar=self.speed_scalar,
                              chann_sel_dp=0.,
-                             activity_dp=0.)
+                             activity_dp=0.,
+                             l2_reg_scale=0.01)
             mt_activity = self._time_map((speed_inputs, speed_input_tents, direction_input),
                                          area_mt,
                                          name='area_mt')
@@ -90,7 +91,7 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              max_outputs=self.max_im_outputs)
 
         with tf.variable_scope('mst_over_time'):
-            area_mst = AreaMST(n_chann=64, max_im_outputs=4, dropout=0.)
+            area_mst = AreaMST(n_chann=64, max_im_outputs=4, dropout=0., l2_reg_scale=0.01)
             mst_activity = self._time_map(mt_activity, area_mst, 'area_mst')
 
             tf.summary.histogram('mst_activity', mst_activity)
@@ -119,7 +120,8 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                                         batch_norm=True,
                                         dropout=0.,
                                         act=tf.nn.elu,
-                                        name='conv_with_mask')
+                                        name='conv_with_mask',
+                                        kernel_l2_reg_scale=0.01)
 
         dense1 = dense(tf.layers.flatten(time_pooled_masked),
                        units=256,
@@ -133,13 +135,13 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                        name='dense2',
                        act=tf.nn.elu,
                        batch_norm=True,
-                       kernel_l2_reg_scale=0.)
+                       kernel_l2_reg_scale=0.01)
 
 
         pbbox = dense(dense2,
                       units=4,
                       name='predictions',
-                      act=tf.nn.sigmoid,
+                      act=lambda x: (3 * tf.nn.sigmoid(x)) - 1,
                       batch_norm=False,
                       kernel_l2_reg_scale=0.)
 

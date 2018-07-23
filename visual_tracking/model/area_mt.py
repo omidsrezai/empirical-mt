@@ -21,7 +21,9 @@ class AreaMT(object):
                  empirical_excitatory_params,
                  chann_sel_dp,
                  max_im_outputs,
-                 activity_dp):
+                 activity_dp,
+                 l2_reg_scale,
+                 chann_sel_impl=1):
         self.speed_scalar = speed_scalar
         self.excitatory_params = empirical_excitatory_params
         self.n_chann = n_chann
@@ -29,6 +31,8 @@ class AreaMT(object):
         self._allocated = False
         self.chann_sel_dp = chann_sel_dp
         self.activity_dp = activity_dp
+        self.l2_reg_scale = l2_reg_scale
+        self.chann_sel_impl = chann_sel_impl
 
     def __call__(self, speed_input, speed_input_tents, direction_input, contrast_input=None):
         with tf.variable_scope("area_mt", reuse=self._allocated):
@@ -156,7 +160,8 @@ class AreaMT(object):
                                  k_init_uniform=True,
                                  name='conv2d_6x6_pool',
                                  kernel_summary=not self._allocated,
-                                 activity_summary=True)
+                                 activity_summary=True,
+                                 kernel_l2_reg_scale=self.l2_reg_scale)
 
         return mt_activity
 
@@ -194,25 +199,29 @@ class AreaMT(object):
                                      tf.expand_dims(tf.expand_dims(normed, axis=2), axis=0))
 
     def _15x15_chann_sel_conv2d(self, x, k_constraint, dp=0.):
-        '''
-        with tf.variable_scope('chann_sel_conv2d'):
-            conv2d = SelConv2d(self.n_chann,
-                               (15, 15),
-                               activation=None,
-                               use_bias=False,
-                               padding="SAME",
-                               kernel_constraint=k_constraint,
-                               name='conv2d',
-                               kernel_initializer='glorot_uniform')
+        if self.chann_sel_impl == 0:
+            with tf.variable_scope('chann_sel_conv2d'):
+                conv2d = SelConv2d(self.n_chann,
+                                   (15, 15),
+                                   activation=None,
+                                   use_bias=False,
+                                   padding="SAME",
+                                   kernel_constraint=k_constraint,
+                                   name='conv2d',
+                                   kernel_initializer='glorot_uniform')
 
-            y = tf.identity(conv2d(x)) # fixes no out_bound bug
+                y = tf.identity(conv2d(x)) # fixes no out_bound bug
 
-        '''
-        y = chann_sel_conv2d(x, constraint=k_constraint,
-                             filters=self.n_chann,
-                             kernel_size=(15, 15),
-                             kernel_summary=not self._allocated,
-                             name='chann_sel_conv2d')
+        elif self.chann_sel_impl == 1:
+            y = chann_sel_conv2d(x, constraint=k_constraint,
+                                 filters=self.n_chann,
+                                 kernel_size=(15, 15),
+                                 kernel_summary=not self._allocated,
+                                 name='chann_sel_conv2d',
+                                 kernel_l2_reg_scale=0.)
+
+        else:
+            raise ValueError('Unkown chann_sel_impl %s' % self.chann_sel_impl)
 
         if dp > 0.:
             y = tf.layers.dropout(y, rate=dp)
