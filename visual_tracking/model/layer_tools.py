@@ -115,8 +115,9 @@ def chann_sel_conv2d(x, kernel_size, filters,
         #kernel_in_gate = tf.exp(tf.div(kernel_pooled_centered, 0.09))
 
         kernel_pooled = _compute_conv_kernel_gradient_norm(kernel)
-        kernel_pooled_centered = -kernel_pooled + tf.reduce_min(kernel_pooled, axis=0)
-        kernel_in_gate = tf.exp(tf.div(kernel_pooled_centered, 0.000001))
+        kernel_pooled_centered = (kernel_pooled - tf.reduce_min(kernel_pooled, axis=0)) / (tf.reduce_max(kernel_pooled) - tf.reduce_min(kernel_pooled))
+        # kernel_in_gate = tf.exp(-tf.div(tf.square(kernel_pooled_centered), 0.01))
+        kernel_in_gate = tf.nn.softmax(1 - kernel_pooled_centered, axis=0)
 
         '''
         if not tf.get_variable_scope().reuse:
