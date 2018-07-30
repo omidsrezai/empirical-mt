@@ -18,7 +18,9 @@ class AreaMT(object):
 
     def __init__(self, speed_scalar,
                  n_chann,
+                 conv_chann,
                  empirical_excitatory_params,
+                 attention_gains,
                  chann_sel_dp,
                  max_im_outputs,
                  activity_dp):
@@ -29,14 +31,17 @@ class AreaMT(object):
         self._allocated = False
         self.chann_sel_dp = chann_sel_dp
         self.activity_dp = activity_dp
+        self.attention_gains = attention_gains[0:self.n_chann]
+        self.conv_chann = conv_chann
 
-    def __call__(self, speed_input, speed_input_tents, direction_input, contrast_input=None):
+    def __call__(self, speed_input, speed_input_tents, direction_input, saliency_input=None, contrast_input=None):
         with tf.variable_scope("area_mt", reuse=self._allocated):
             direction_tun = self._direction_tuning(direction_input)
+            attention_tun = self._attention_tuning(saliency_input) if saliency_input is not None else None
 
-            excitatory = self._excitatory(direction_tun, speed_input)
-            dir_selective_sup = self._direction_selective_suppressive(direction_tun, speed_input_tents)
-            non_dir_sel_sup = self._non_direction_selective_suppressive(speed_input_tents)
+            excitatory = self._excitatory(direction_tun, attention_tun, speed_input)
+            dir_selective_sup = self._direction_selective_suppressive(direction_tun, attention_tun, speed_input_tents)
+            non_dir_sel_sup = self._non_direction_selective_suppressive(attention_tun, speed_input_tents)
 
             mt_activity = self._integrate_components(dir_selective_sup, excitatory, non_dir_sel_sup)
 
@@ -46,6 +51,23 @@ class AreaMT(object):
         self._allocated = True # flags the variables have been allocated
 
         return mt_activity
+
+    def _attention_tuning(self, saliencymap):
+        with tf.name_scope('attention_tun'):
+            saliencymap_repeats = tf.tile(tf.expand_dims(saliencymap, axis=3), [1, 1, 1, self.n_chann])
+
+            attention_gain_shape = saliencymap.get_shape().as_list()[1:3] + [1]
+            attention_gains = tf.reshape(tf.constant(self.attention_gains), [1, 1, self.n_chann])
+            attention_gains = tf.tile(attention_gains, attention_gain_shape)
+
+            attention_tun = tf.multiply(saliencymap_repeats, attention_gains) + (1 - saliencymap_repeats)
+            attention_tun = tf.layers.batch_normalization(attention_tun)
+
+            feature_maps_summary('attentin_tunning',
+                                 attention_tun,
+                                 max_im_outputs=self.max_im_outputs)
+
+        return attention_tun
 
     def _direction_tuning(self, direction_input):
         with tf.name_scope('direction_tun'):
@@ -60,7 +82,7 @@ class AreaMT(object):
 
         return direction_tun
 
-    def _excitatory(self, direction_tun, speed_input):
+    def _excitatory(self, direction_tun, attention_tun, speed_input):
         with tf.name_scope('sp_tun_excit'):
             speed_tun_excit_layer = SpeedTuning(self.n_chann,
                                                 self.excitatory_params,
@@ -74,6 +96,10 @@ class AreaMT(object):
 
         with tf.variable_scope("excitatory"):
             excitatory = tf.multiply(speed_tun_excit, direction_tun)
+
+            if attention_tun is not None:
+                excitatory = tf.multiply(excitatory, attention_tun)
+
             excitatory = tf.layers.batch_normalization(excitatory)
             excitatory = self._15x15_chann_sel_conv2d(excitatory,
                                                       k_constraint=NonNeg(),
@@ -85,7 +111,7 @@ class AreaMT(object):
 
         return excitatory
 
-    def _direction_selective_suppressive(self, direction_tun, speed_input_tents):
+    def _direction_selective_suppressive(self, direction_tun, attention_tun, speed_input_tents):
         with tf.variable_scope('sp_tun_dir_sel_sup'):
             speed_tun_dir_sel_sup = TentLinearComb(self.n_chann,
                                                    constraint=NonNeg(),
@@ -97,6 +123,10 @@ class AreaMT(object):
 
         with tf.variable_scope("dir_sel_sup"):
             dir_selective_sup = tf.multiply(speed_tun_dir_sel_sup, direction_tun)
+
+            if attention_tun is not None:
+                dir_selective_sup = tf.multiply(dir_selective_sup, attention_tun)
+
             dir_selective_sup = tf.layers.batch_normalization(dir_selective_sup)
             dir_selective_sup = self._15x15_chann_sel_conv2d(dir_selective_sup,
                                                              k_constraint=NonPos(),
@@ -108,7 +138,7 @@ class AreaMT(object):
 
         return dir_selective_sup
 
-    def _non_direction_selective_suppressive(self, speed_input_tents):
+    def _non_direction_selective_suppressive(self, attention_tun, speed_input_tents):
         with tf.variable_scope("sp_tun_non_dir_sup"):
             speed_tun_non_dir_sel_sup = TentLinearComb(self.n_chann,
                                                        constraint=NonNeg(),
@@ -120,6 +150,9 @@ class AreaMT(object):
                                  max_im_outputs=self.max_im_outputs)
 
         with tf.variable_scope("non_dir_sel_sup"):
+            if attention_tun is not None:
+                speed_tun_non_dir_sel_sup = tf.multiply(speed_tun_non_dir_sel_sup, attention_tun)
+
             non_dir_sel_sup = tf.layers.batch_normalization(speed_tun_non_dir_sel_sup)
             non_dir_sel_sup = self._15x15_chann_sel_conv2d(non_dir_sel_sup,
                                                            k_constraint=NonPos(),
@@ -146,7 +179,7 @@ class AreaMT(object):
 
             mt_activity = conv2d(mt_activity,
                                  kernel_size=(15, 15),
-                                 filters=self.n_chann,
+                                 filters=self.conv_chann,
                                  strides=(1, 1),
                                  padding='same',
                                  act=tf.nn.relu,

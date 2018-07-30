@@ -2,7 +2,6 @@ import tensorflow as tf
 from keras import backend as K
 
 from visual_tracking.model.layer_tools import conv2d
-from visual_tracking.utils.tensorboad_utils import feature_maps_summary
 
 tf_sess = tf.Session()
 K.set_session(tf_sess)
