@@ -27,7 +27,6 @@ def compute_saliency(frame, method='static_fine_grained', **kwargs):
 
     return bin_map
 
-
 def _compute_saliency_static_fine_grained(frame, **kwargs):
     frame_u8 = img_as_ubyte(frame)
     (success, saliency_map) = cv2_static_fine_grained_saliency.computeSaliency(frame_u8)
@@ -37,11 +36,14 @@ def _compute_saliency_static_fine_grained(frame, **kwargs):
 
     return saliency_map
 
-
 def _compute_minimum_barrier(frame, **kwargs):
     frame_u8 = img_as_ubyte(frame)
-    saliency_map = psal.get_saliency_mbd(imgu8=frame_u8)
-    saliency_map = saliency_map.astype(np.ubyte)
+
+    try:
+        saliency_map = psal.get_saliency_mbd(imgu8=frame_u8)
+        saliency_map = saliency_map.astype(np.ubyte)
+    except:
+        saliency_map = np.zeros(frame.shape[0:2], dtype=np.ubyte)
 
     return saliency_map
 

@@ -8,7 +8,7 @@ import argparse
 import tensorflow as tf
 
 from visual_tracking.model.mt_mst_sequence_tracker import MTMSTSeqTracker
-from visual_tracking.data_pipline.speed_direction_saliency_input import SpeedDirectionSeqInputFunc
+from visual_tracking.data_pipline.speed_direction_saliency_input import SpeedDirectionSaliencySeqInputFunc
 
 SPEED_SCALER = 4
 
@@ -46,26 +46,26 @@ def main(argv=None):
     else:
         saliency_configs = {'saliency_method': args.saliency_method}
 
-    input_fn_train = SpeedDirectionSeqInputFunc(dataset_index_filepath='../../data/alov300++/alov300_train.csv',
-                                                input_folderpath='../../',
-                                                fixed_input_dim=args.fixed_input_dim,
-                                                batch_size=args.train_batch_size,
-                                                num_epochs=1,
-                                                cache_id=args.train_dataset_cache_id,
-                                                flow_method=args.flow_method,
-                                                shuffle=True,
-                                                shuffle_buffer_size=args.train_shuffle_buffer_size,
-                                                **saliency_configs)
+    input_fn_train = SpeedDirectionSaliencySeqInputFunc(dataset_index_filepath='../../data/alov300++/alov300_train.csv',
+                                                        input_folderpath='../../',
+                                                        fixed_input_dim=args.fixed_input_dim,
+                                                        batch_size=args.train_batch_size,
+                                                        num_epochs=1,
+                                                        cache_id=args.train_dataset_cache_id,
+                                                        flow_method=args.flow_method,
+                                                        shuffle=True,
+                                                        shuffle_buffer_size=args.train_shuffle_buffer_size,
+                                                        **saliency_configs)
 
-    input_fn_eval = SpeedDirectionSeqInputFunc(dataset_index_filepath='../../data/alov300++/alov300_test.csv',
-                                               input_folderpath='../../',
-                                               fixed_input_dim=args.fixed_input_dim,
-                                               batch_size=args.test_batch_size,
-                                               num_epochs=1,
-                                               cache_id=args.test_dataset_cache_id,
-                                               flow_method=args.flow_method,
-                                               shuffle=False,
-                                               **saliency_configs)
+    input_fn_eval = SpeedDirectionSaliencySeqInputFunc(dataset_index_filepath='../../data/alov300++/alov300_test.csv',
+                                                       input_folderpath='../../',
+                                                       fixed_input_dim=args.fixed_input_dim,
+                                                       batch_size=args.test_batch_size,
+                                                       num_epochs=1,
+                                                       cache_id=args.test_dataset_cache_id,
+                                                       flow_method=args.flow_method,
+                                                       shuffle=False,
+                                                       **saliency_configs)
 
     cont_train_flag = False
 
