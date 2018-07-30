@@ -8,7 +8,7 @@ from surround.smart_example import SmartInput as TentLinearComb, AddBiasNonlinea
 from tuning import SpeedTuning, DirectionTuning
 from visual_tracking.model.layer_tools import conv2d, chann_sel_conv2d
 from visual_tracking.utils.keras_utils import NonPos
-from visual_tracking.utils.tensorboad_utils import feature_maps_summary
+from visual_tracking.utils.tensorboad_utils import feature_maps_summary, mt_conv_kernels_summary
 
 tf_sess = tf.Session()
 K.set_session(tf_sess)
@@ -50,7 +50,7 @@ class AreaMT(object):
             mt_activity = self._integrate_components(dir_selective_sup, excitatory, non_dir_sel_sup)
 
             if (not self._allocated and self.chann_sel_impl == 0):
-                self._log_conv_kernels()
+                mt_conv_kernels_summary()
 
         self._allocated = True # flags the variables have been allocated
 
@@ -197,39 +197,6 @@ class AreaMT(object):
                                  kernel_l2_reg_scale=self.l2_reg_scale)
 
         return mt_activity
-
-    def _log_conv_kernels(self):
-        tenors_to_log = ['excitatory', 'dir_sel_sup', 'non_dir_sel_sup']
-        sig2 = .09
-
-        with tf.name_scope('kernel_visualization'):
-            for t_path in tenors_to_log:
-                kernel_path = path.join('mt_over_time/time_map_area_mt/area_mt',
-                                        t_path,
-                                        'chann_sel_conv2d/conv2d/kernel_smart:0')
-                selector_path = path.join('mt_over_time/time_map_area_mt/area_mt',
-                                          t_path,
-                                          'chann_sel_conv2d/conv2d/selector:0')
-
-                kernel = tf.get_default_graph().get_tensor_by_name(kernel_path)
-                selector = tf.get_default_graph().get_tensor_by_name(selector_path)
-
-                tf.summary.histogram('%s_chann_selector' % t_path, selector)
-                tf.summary.histogram('%s_chann_sel_conv2d_kernel' % t_path, kernel)
-
-                base = tf.range(0, kernel.get_shape().as_list()[-1], dtype=tf.float32)
-                base = tf.expand_dims(base, axis=1)
-                base = tf.tile(base, [1, kernel.shape[-1]])
-                kernels = kernel * tf.exp(-tf.square(base - selector) / (2 * sig2))
-
-                for i in range(kernel.shape[-1]):
-                    w = kernels[:, :, :, i]
-                    confidence = tf.abs(tf.reduce_mean(w, axis=(0, 1)))
-                    selected = w[:, :, tf.argmax(confidence)]
-                    normed = tf.abs(selected)
-                    normed = (normed - tf.reduce_min(normed)) / (tf.reduce_max(normed) - tf.reduce_min(normed))
-                    tf.summary.image('%s_out_chann_%s' % (t_path, i),
-                                     tf.expand_dims(tf.expand_dims(normed, axis=2), axis=0))
 
     def _15x15_chann_sel_conv2d(self, x, k_constraint, dp=0.):
         if self.chann_sel_impl == 0:

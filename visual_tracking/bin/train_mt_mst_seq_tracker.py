@@ -32,6 +32,7 @@ def main(argv=None):
 
     # dataset arguments
     parser.add_argument('--fixed-input-dim', action='store', type=int, default=76)
+    parser.add_argument('--k', action='store', type=int, default=2)
     parser.add_argument('--flow-method', action='store', type=str, default='fb')
     parser.add_argument('--train-dataset-cache-id', action='store', type=str, default=None)
     parser.add_argument('--test-dataset-cache-id', action='store', type=str, default=None)
@@ -55,6 +56,7 @@ def main(argv=None):
                                                         flow_method=args.flow_method,
                                                         shuffle=True,
                                                         shuffle_buffer_size=args.train_shuffle_buffer_size,
+                                                        k=args.k,
                                                         **saliency_configs)
 
     input_fn_eval = SpeedDirectionSaliencySeqInputFunc(dataset_index_filepath='../../data/alov300++/alov300_test.csv',
@@ -65,6 +67,7 @@ def main(argv=None):
                                                        cache_id=args.test_dataset_cache_id,
                                                        flow_method=args.flow_method,
                                                        shuffle=False,
+                                                       k=args.k,
                                                        **saliency_configs)
 
     cont_train_flag = False

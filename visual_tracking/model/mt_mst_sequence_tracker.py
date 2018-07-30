@@ -7,7 +7,7 @@ from keras import backend as K
 from visual_tracking.model.alov300_model_base import ALOV300ModelBase
 from visual_tracking.model.area_mst import AreaMST
 from visual_tracking.model.area_mt import AreaMT
-from visual_tracking.model.layer_tools import dense, conv2d
+from visual_tracking.model.layer_tools import dense, conv2d, time_map
 
 tf_sess = tf.Session()
 K.set_session(tf_sess)
@@ -17,11 +17,9 @@ class MTMSTSeqTracker(ALOV300ModelBase):
     def __init__(self, mt_params_path,
                  mt_attention_gain_path,
                  speed_scalar,
-                 n_chann=64,
                  **kwargs):
         self.mt_params = pickle.load(open(mt_params_path, "rb"))
         self.mt_attention_gains = np.load(mt_attention_gain_path).astype(np.float32)
-        self.n_chann = n_chann
         self.speed_scalar = speed_scalar
         super(MTMSTSeqTracker, self).__init__(**kwargs)
 
@@ -70,9 +68,9 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              conv_chann=32,
                              l2_reg_scale=0.005)
 
-            mt_activity = self._time_map((speed_inputs, speed_input_tents, direction_input),
-                                         area_mt,
-                                         name='area_mt')
+            mt_activity = time_map((speed_inputs, speed_input_tents, direction_input),
+                                   area_mt,
+                                   name='area_mt')
 
             tf.summary.histogram('mt_activity', mt_activity)
             tf.summary.image('mt_activity_time_avg',
@@ -84,7 +82,7 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                                max_im_outputs=4,
                                dropout=0.,
                                l2_reg_scale=0.005)
-            mst_activity = self._time_map(mt_activity, area_mst, 'area_mst')
+            mst_activity = time_map(mt_activity, area_mst, 'area_mst')
 
             tf.summary.histogram('mst_activity', mst_activity)
 
@@ -137,17 +135,3 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              y_hat=pbbox,
                              pred_box=pbbox,
                              y=labels)
-
-    def _time_map(self, x_timesteps, f, name):
-        with tf.variable_scope('time_map_%s' % name):
-            y_timesteps = []
-            ts = x_timesteps[0].shape[1] if isinstance(x_timesteps, tuple) else x_timesteps.shape[1]
-
-            for i in range(0, ts):
-                y_timestep = f(*[x[:, i] for x in x_timesteps]) \
-                    if isinstance(x_timesteps, tuple) else f(x_timesteps[:, i])
-                y_timesteps.append(y_timestep)
-
-            y_timesteps = tf.stack(y_timesteps, axis=1)
-
-        return y_timesteps

@@ -304,19 +304,18 @@ class SpeedDirectionSaliencySeqInputFunc(SequenceInputFuncBase):
     def _project_speed_tents(self, speed_seq):
         tent_centers = np.exp(np.arange(0, 5, .45))
 
-        def _project_single_speed_example(speed):
+        def _project_single_speed_example(speed_scaled):
             tent_basis = []
             for j in range(0, len(tent_centers) - 2):
                 _left = tent_centers[j]
                 _center = tent_centers[j + 1]
                 _right = tent_centers[j + 2]
 
-                scaled = speed * self.speed_scalar
-                y_left = (scaled - _left) / (_center - _left)
-                y_right = (_right - scaled) / (_right - _center)
+                y_left = (speed_scaled - _left) / (_center - _left)
+                y_right = (_right - speed_scaled) / (_right - _center)
 
-                y = tf.where((scaled >= _left) & (scaled <= _center), y_left, tf.zeros_like(scaled)) \
-                    + tf.where((scaled >= _center) & (scaled <= _right), y_right, tf.zeros_like(scaled))
+                y = tf.where((speed_scaled >= _left) & (speed_scaled <= _center), y_left, tf.zeros_like(speed_scaled)) \
+                    + tf.where((speed_scaled >= _center) & (speed_scaled <= _right), y_right, tf.zeros_like(speed_scaled))
 
                 tent_basis.append(y)
 
@@ -324,6 +323,6 @@ class SpeedDirectionSaliencySeqInputFunc(SequenceInputFuncBase):
 
             return speed_tents
 
-        speed_tents_seq = tf.map_fn(_project_single_speed_example, elems=speed_seq, parallel_iterations=1)
+        speed_tents_seq = tf.map_fn(_project_single_speed_example, elems=speed_seq * self.speed_scalar, parallel_iterations=1)
 
         return speed_tents_seq

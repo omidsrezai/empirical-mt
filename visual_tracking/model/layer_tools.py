@@ -89,6 +89,21 @@ def conv2d(x, kernel_size, filters, strides, name,
     return conv
 
 
+def time_map(x_timesteps, f, name):
+    with tf.variable_scope('time_map_%s' % name):
+        y_timesteps = []
+        ts = x_timesteps[0].shape[1] if isinstance(x_timesteps, tuple) else x_timesteps.shape[1]
+
+        for i in range(0, ts):
+            y_timestep = f(*[x[:, i] for x in x_timesteps]) \
+                if isinstance(x_timesteps, tuple) else f(x_timesteps[:, i])
+            y_timesteps.append(y_timestep)
+
+        y_timesteps = tf.stack(y_timesteps, axis=1)
+
+    return y_timesteps
+
+
 def chann_sel_conv2d(x, kernel_size, filters,
                      constraint,
                      kernel_l2_reg_scale=0.,
@@ -116,8 +131,8 @@ def chann_sel_conv2d(x, kernel_size, filters,
 
         kernel_pooled = _compute_conv_kernel_gradient_norm(kernel)
         kernel_pooled_centered = (kernel_pooled - tf.reduce_min(kernel_pooled, axis=0)) / (tf.reduce_max(kernel_pooled) - tf.reduce_min(kernel_pooled))
-        # kernel_in_gate = tf.exp(-tf.div(tf.square(kernel_pooled_centered), 0.01))
-        kernel_in_gate = tf.nn.softmax(1 - kernel_pooled_centered, axis=0)
+        kernel_in_gate = tf.exp(-tf.div(tf.square(kernel_pooled_centered), 0.01))
+        #kernel_in_gate = tf.nn.softmax(1 - kernel_pooled_centered, axis=0)
 
         '''
         if not tf.get_variable_scope().reuse:
@@ -163,6 +178,7 @@ def chann_sel_conv2d(x, kernel_size, filters,
                             max_outputs=1)
 
     return conv
+
 
 def _compute_conv_kernel_gradient_norm(k):
     k_trans = tf.transpose(k, perm=(3, 0, 1, 2))
