@@ -6,7 +6,7 @@ from keras.constraints import NonNeg
 
 from surround.smart_example import SmartInput as TentLinearComb, AddBiasNonlinear, SmartConv2D as SelConv2d
 from tuning import SpeedTuning, DirectionTuning
-from visual_tracking.model.layer_tools import conv2d
+from visual_tracking.model.layer_tools import conv2d, chann_sel_conv2d
 from visual_tracking.utils.keras_utils import NonPos
 from visual_tracking.utils.tensorboad_utils import feature_maps_summary
 
@@ -23,7 +23,9 @@ class AreaMT(object):
                  attention_gains,
                  chann_sel_dp,
                  max_im_outputs,
-                 activity_dp):
+                 activity_dp,
+                 l2_reg_scale,
+                 chann_sel_impl=1):
         self.speed_scalar = speed_scalar
         self.excitatory_params = empirical_excitatory_params
         self.n_chann = n_chann
@@ -33,6 +35,8 @@ class AreaMT(object):
         self.activity_dp = activity_dp
         self.attention_gains = attention_gains[0:self.n_chann]
         self.conv_chann = conv_chann
+        self.l2_reg_scale = l2_reg_scale
+        self.chann_sel_impl = chann_sel_impl
 
     def __call__(self, speed_input, speed_input_tents, direction_input, saliency_input=None, contrast_input=None):
         with tf.variable_scope("area_mt", reuse=self._allocated):
@@ -45,7 +49,7 @@ class AreaMT(object):
 
             mt_activity = self._integrate_components(dir_selective_sup, excitatory, non_dir_sel_sup)
 
-            if (not self._allocated):
+            if (not self._allocated and self.chann_sel_impl == 0):
                 self._log_conv_kernels()
 
         self._allocated = True # flags the variables have been allocated
@@ -189,7 +193,8 @@ class AreaMT(object):
                                  k_init_uniform=True,
                                  name='conv2d_6x6_pool',
                                  kernel_summary=not self._allocated,
-                                 activity_summary=True)
+                                 activity_summary=True,
+                                 kernel_l2_reg_scale=self.l2_reg_scale)
 
         return mt_activity
 
@@ -227,23 +232,31 @@ class AreaMT(object):
                                      tf.expand_dims(tf.expand_dims(normed, axis=2), axis=0))
 
     def _15x15_chann_sel_conv2d(self, x, k_constraint, dp=0.):
-        with tf.variable_scope('chann_sel_conv2d'):
-            conv2d = SelConv2d(self.n_chann,
-                               (15, 15),
-                               activation=None,
-                               use_bias=False,
-                               padding="SAME",
-                               kernel_constraint=k_constraint,
-                               name='conv2d',
-                               kernel_initializer='glorot_uniform')
+        if self.chann_sel_impl == 0:
+            with tf.variable_scope('chann_sel_conv2d'):
+                conv2d = SelConv2d(self.n_chann,
+                                   (15, 15),
+                                   activation=None,
+                                   use_bias=False,
+                                   padding="SAME",
+                                   kernel_constraint=k_constraint,
+                                   name='conv2d',
+                                   kernel_initializer='glorot_uniform')
 
-            y = tf.identity(conv2d(x)) # fixes no out_bound bug
+                y = tf.identity(conv2d(x)) # fixes no out_bound bug
+
+        elif self.chann_sel_impl == 1:
+            y = chann_sel_conv2d(x, constraint=k_constraint,
+                                 filters=self.n_chann,
+                                 kernel_size=(15, 15),
+                                 kernel_summary=not self._allocated,
+                                 name='chann_sel_conv2d',
+                                 kernel_l2_reg_scale=0.)
+
+        else:
+            raise ValueError('Unkown chann_sel_impl %s' % self.chann_sel_impl)
 
         if dp > 0.:
             y = tf.layers.dropout(y, rate=dp)
 
         return y
-
-    def _dropout_per_channel(self, x):
-        noise_shape = tf.concat([tf.shape(x)[0:1], [1, 1, 64]], axis=0)
-        return tf.layers.dropout(x, rate=0.5, noise_shape=noise_shape)

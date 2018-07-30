@@ -67,7 +67,9 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              chann_sel_dp=0.,
                              activity_dp=0.,
                              attention_gains=self.mt_attention_gains,
-                             conv_chann=32)
+                             conv_chann=32,
+                             l2_reg_scale=0.005)
+
             mt_activity = self._time_map((speed_inputs, speed_input_tents, direction_input),
                                          area_mt,
                                          name='area_mt')
@@ -78,7 +80,10 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              max_outputs=self.max_im_outputs)
 
         with tf.variable_scope('mst_over_time'):
-            area_mst = AreaMST(n_chann=8, max_im_outputs=4, dropout=0.)
+            area_mst = AreaMST(n_chann=64,
+                               max_im_outputs=4,
+                               dropout=0.,
+                               l2_reg_scale=0.005)
             mst_activity = self._time_map(mt_activity, area_mst, 'area_mst')
 
             tf.summary.histogram('mst_activity', mst_activity)
@@ -93,15 +98,15 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              max_outputs=self.max_im_outputs)
 
         conv1 = conv2d(time_pooled,
-                        kernel_size=(3, 3),
-                        filters=128,
-                        max_pool=None,
-                        strides=(1, 1),
-                        batch_norm=True,
-                        dropout=0.,
-                        act=tf.nn.elu,
-                        name='conv',
-                        kernel_l2_reg_scale=0.01)
+                       kernel_size=(3, 3),
+                       filters=128,
+                       max_pool=None,
+                       strides=(1, 1),
+                       batch_norm=True,
+                       dropout=0.,
+                       act=tf.nn.elu,
+                       name='conv',
+                       kernel_l2_reg_scale=0.01)
 
         dense1 = dense(tf.layers.flatten(conv1),
                        units=256,
