@@ -174,7 +174,7 @@ class SequenceInputFuncBase(object):
                                         self._read_frames_pyfunc,
                                         [filepaths, bboxes, num_seqs_in_video],
                                         [tf.float32, tf.float32, tf.int32])),
-                 num_parallel_calls=self.n_workers)  # all workers are used since there is an IO-bounded python function
+                 num_parallel_calls=self.n_workers)  # all workers are used since there is an IO-bound python function
 
         # apply additional pre-processing
         dataset = self.preprocess_cached(dataset)

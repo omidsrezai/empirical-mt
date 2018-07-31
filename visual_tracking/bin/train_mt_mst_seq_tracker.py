@@ -57,6 +57,7 @@ def main(argv=None):
                                                         shuffle=True,
                                                         shuffle_buffer_size=args.train_shuffle_buffer_size,
                                                         k=args.k,
+                                                        data_augmentation=False,
                                                         **saliency_configs)
 
     input_fn_eval = SpeedDirectionSaliencySeqInputFunc(dataset_index_filepath='../../data/alov300++/alov300_test.csv',
@@ -68,8 +69,10 @@ def main(argv=None):
                                                        flow_method=args.flow_method,
                                                        shuffle=False,
                                                        k=args.k,
+                                                       data_augmentation=False,
                                                        **saliency_configs)
 
+    # whether the current session continues a previous session
     cont_train_flag = False
 
     timestamp = datetime.fromtimestamp(time()).strftime('%m-%d-%H-%M-%S')

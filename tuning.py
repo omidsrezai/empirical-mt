@@ -17,9 +17,9 @@ def contr_func(c, A,B):
 class DirectionTuning(Layer):
     def __init__(self, output_dim, params, **kwargs):
         self.output_dim = output_dim
-        self.pref_dir = tf.convert_to_tensor(params['pref_dir'], dtype=tf.float32)
-        self.dir_width= tf.convert_to_tensor(params['dir_width'], dtype=tf.float32)
-        self.a_n = tf.convert_to_tensor(params['a_n'], dtype=tf.float32)        
+        self.pref_dir = tf.convert_to_tensor(params['pref_dir'][0:output_dim], dtype=tf.float32)
+        self.dir_width= tf.convert_to_tensor(params['dir_width'][0:output_dim], dtype=tf.float32)
+        self.a_n = tf.convert_to_tensor(params['a_n'][0:output_dim], dtype=tf.float32)
 
         #self.max_rate = tf.convert_to_tensor(params['max_rate'], dtype=tf.float32)
         #self.back_rate = tf.convert_to_tensor(params['back_rate'], dtype=tf.float32)
@@ -50,14 +50,14 @@ class SpeedTuning(Layer):
     def __init__(self, output_dim, params, unit_conv,**kwargs):
         self.unit_conv = unit_conv 
         self.output_dim = output_dim        
-        self.pref_sp = tf.convert_to_tensor(params['pref_sp'], dtype=tf.float32)
-        self.sp_width = tf.convert_to_tensor(params['sp_width'], dtype=tf.float32 )
-        self.sp_offset = tf.convert_to_tensor(params['sp_offset'], dtype=tf.float32) 
+        self.pref_sp = tf.convert_to_tensor(params['pref_sp'][0:output_dim], dtype=tf.float32)
+        self.sp_width = tf.convert_to_tensor(params['sp_width'][0:output_dim], dtype=tf.float32 )
+        self.sp_offset = tf.convert_to_tensor(params['sp_offset'][0:output_dim], dtype=tf.float32)
 
-        self.Ap = tf.convert_to_tensor(params['Ap'], dtype=tf.float32)
-        self.Bp = tf.convert_to_tensor(params['Bp'], dtype=tf.float32)
-        self.Ag = tf.convert_to_tensor(params['Ag'], dtype=tf.float32)
-        self.Bg = tf.convert_to_tensor(params['Bg'], dtype=tf.float32)
+        self.Ap = tf.convert_to_tensor(params['Ap'][0:output_dim], dtype=tf.float32)
+        self.Bp = tf.convert_to_tensor(params['Bp'][0:output_dim], dtype=tf.float32)
+        self.Ag = tf.convert_to_tensor(params['Ag'][0:output_dim], dtype=tf.float32)
+        self.Bg = tf.convert_to_tensor(params['Bg'][0:output_dim], dtype=tf.float32)
 
         #self.max_rate = tf.convert_to_tensor(params['max_rate'], dtype=tf.float32)
         #self.back_rate = tf.convert_to_tensor(params['back_rate'], dtype=tf.float32)
@@ -69,16 +69,28 @@ class SpeedTuning(Layer):
     def build(self, input_shape):
         super(SpeedTuning, self).build(input_shape)  # Be sure to call this somewhere!
 
-    def call(self, x):        
+    def call(self, x):
+        ###################################################################################################
+        '''
         speed_deg_per_second = tf.expand_dims(x[0], -1) * self.unit_conv
         contrast = tf.expand_dims(x[1], -1)
         q = (speed_deg_per_second+self.sp_offset)/(contr_func(contrast, self.Ap, self.Bp) +self.sp_offset)
         speed_scale = tf.exp(-((tf.log(q)**2)/(2*self.sp_width**2)))
         speed_scale = contr_func(contrast, self.Ag, self.Bg)*speed_scale
+        '''
+        ####################################################################################
+
+        speed_input = x
+        speed_deg_per_second = tf.expand_dims(speed_input, -1) * self.unit_conv
+        #contrast = tf.expand_dims(x[1], -1)
+        q = (speed_deg_per_second + self.sp_offset) / (self.pref_sp + self.sp_offset)
+        speed_scale = tf.exp(-((tf.log(q)**2)/(2*self.sp_width**2)))
+
         return speed_scale    
     
     def compute_output_shape(self, input_shape):
-        out_sh = (input_shape[0][0], input_shape[0][1], input_shape[0][2], self.output_dim)
+        speed_input = input_shape
+        out_sh = (speed_input[0], speed_input[1], speed_input[2], self.output_dim)
         return out_sh
 
     def get_config(self):

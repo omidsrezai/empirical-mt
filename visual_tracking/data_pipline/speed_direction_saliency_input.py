@@ -17,6 +17,7 @@ class SpeedDirectionSaliencySeqInputFunc(SequenceInputFuncBase):
                  speed_scalar=4,
                  optic_flow_cache_id=None,
                  saliency_map_cache_id=None,
+                 data_augmentation=True,
                  **kwargs):
         self.mode = mode
         self.k = k
@@ -26,6 +27,7 @@ class SpeedDirectionSaliencySeqInputFunc(SequenceInputFuncBase):
         self.saliency_method = saliency_method
         self.optic_flow_cache_id = optic_flow_cache_id
         self.saliency_map_cache_id = saliency_map_cache_id
+        self.data_augmentation = data_augmentation
         super(SpeedDirectionSaliencySeqInputFunc, self).__init__(**kwargs)
 
     def preprocess_cached(self, dataset):
@@ -64,9 +66,13 @@ class SpeedDirectionSaliencySeqInputFunc(SequenceInputFuncBase):
 
     def preprocess_no_cache(self, dataset):
         dataset = dataset.map(self._set_shapes, num_parallel_calls=self.n_workers)\
-            .map(self._random_90_rotation, num_parallel_calls=self.n_workers)\
-            .map(self._random_hflip, num_parallel_calls=self.n_workers)\
-            .map(self._fmt_input, num_parallel_calls=self.n_workers)
+
+        if self.data_augmentation:
+            dataset = dataset.map(self._random_90_rotation, num_parallel_calls=self.n_workers)\
+                .map(self._random_hflip, num_parallel_calls=self.n_workers)
+
+        dataset = dataset.map(self._fmt_input, num_parallel_calls=self.n_workers)
+
         return dataset
 
     # rescale the frames based on the size of object to search in the first frame
@@ -185,6 +191,7 @@ class SpeedDirectionSaliencySeqInputFunc(SequenceInputFuncBase):
 
         return frames, flows, saliency, bboxes, num_seqs
 
+    # TODO fix optic flow rotation
     def _random_90_rotation(self, frames, flows, saliency, bboxes, num_seqs):
         # random rotation of k*90 degrees counter-clockwise
         def _rot90_k(k):
@@ -234,6 +241,7 @@ class SpeedDirectionSaliencySeqInputFunc(SequenceInputFuncBase):
 
         return frames_rot, flows_rot, saliency_rot, bboxes_rot, num_seqs
 
+    # TODO fix optic flow flip
     # random horizontal flip
     def _random_hflip(self, frames, flows, saliency, bboxes, num_seqs):
         # draw from a bernouli distribution
