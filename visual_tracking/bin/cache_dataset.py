@@ -51,7 +51,6 @@ def main(argv=None):
                                                         cache_id=args.train_dataset_cache_id,
                                                         flow_method=args.flow_method,
                                                         shuffle=False,
-                                                        shuffle_buffer_size=args.train_shuffle_buffer_size,
                                                         k=args.k,
                                                         data_augmentation=False,
                                                         n_workers=args.n_workers,
