@@ -95,18 +95,25 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              tf.norm(time_pooled, ord=2, axis=3, keep_dims=True),
                              max_outputs=self.max_im_outputs)
 
-        conv1 = conv2d(time_pooled,
-                       kernel_size=(3, 3),
-                       filters=128,
-                       max_pool=None,
-                       strides=(1, 1),
-                       batch_norm=True,
-                       dropout=0.,
-                       act=tf.nn.elu,
-                       name='conv',
-                       kernel_l2_reg_scale=0.01)
+        with tf.variable_scope('add_prev_bbox'):
+            prev_bbox = tf.expand_dims(features['mask'], axis=3)
+            tf.summary.image('mask', prev_bbox, max_outputs=self.max_im_outputs)
+            prev_bbox = tf.layers.average_pooling2d(prev_bbox, pool_size=(19, 19), strides=(19, 19))
 
-        dense1 = dense(tf.layers.flatten(conv1),
+            masked = tf.concat([time_pooled, prev_bbox], axis=3)
+
+            time_pooled_masked = conv2d(masked,
+                                        kernel_size=(3, 3),
+                                        filters=128,
+                                        max_pool=None,
+                                        strides=(1, 1),
+                                        batch_norm=True,
+                                        dropout=0.,
+                                        act=tf.nn.elu,
+                                        name='conv_with_mask',
+                                        kernel_l2_reg_scale=0.01)
+
+        dense1 = dense(tf.layers.flatten(time_pooled_masked),
                        units=256,
                        name='dense1',
                        act=tf.nn.elu,

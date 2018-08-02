@@ -65,7 +65,13 @@ class SpeedDirectionSaliencySeqInputFunc(SequenceInputFuncBase):
         return dataset
 
     def preprocess_no_cache(self, dataset):
-        dataset = dataset.map(self._set_shapes, num_parallel_calls=self.n_workers)\
+        dataset = dataset.map(lambda frames, flows, saliency, bboxes, num_seqs:
+                              tuple(tf.py_func(
+                                  self._draw_bbox_bin_mask,
+                                  [frames, flows, saliency, bboxes, num_seqs],
+                                  [tf.float32, tf.float32, tf.float32, tf.float32, tf.int32, tf.float32])),
+                              num_parallel_calls=1) \
+                         .map(self._set_shapes, num_parallel_calls=self.n_workers)
 
         if self.data_augmentation:
             dataset = dataset.map(self._random_90_rotation, num_parallel_calls=self.n_workers)\
@@ -182,14 +188,23 @@ class SpeedDirectionSaliencySeqInputFunc(SequenceInputFuncBase):
 
         return frames_cropped, flows_cropped, np.squeeze(saliency_cropped), bbox_cropped, num_seqs
 
-    def _set_shapes(self, frames, flows, saliency, bboxes, num_seqs):
+    def _draw_bbox_bin_mask(self, frames, flows, saliency, bboxes, num_seqs):
+        y_min, x_min, y_max, x_max = np.round(bboxes[0, :] * (self.fixed_input_dim - 1)).astype(np.int32)
+
+        mask = np.zeros_like(frames[0, :, :, 0], dtype=np.float32)
+        mask[y_min:y_max, x_min:x_max] = 1
+
+        return frames, flows, saliency, bboxes, num_seqs, mask
+
+    def _set_shapes(self, frames, flows, saliency, bboxes, num_seqs, mask):
         frames.set_shape([self.sequence_length, self.fixed_input_dim, self.fixed_input_dim, 3])
         flows.set_shape([self.sequence_length - 1, self.fixed_input_dim, self.fixed_input_dim, 2])
         saliency.set_shape([self.sequence_length - 1, self.fixed_input_dim, self.fixed_input_dim])
         bboxes.set_shape([self.sequence_length, 4])
         num_seqs.set_shape([])
+        mask.set_shape([self.fixed_input_dim, self.fixed_input_dim])
 
-        return frames, flows, saliency, bboxes, num_seqs
+        return frames, flows, saliency, bboxes, num_seqs, mask
 
     # TODO fix optic flow rotation
     def _random_90_rotation(self, frames, flows, saliency, bboxes, num_seqs):
@@ -267,7 +282,7 @@ class SpeedDirectionSaliencySeqInputFunc(SequenceInputFuncBase):
         return frames_flipped, flows_flipped, saliency_flipped, bboxes_flipped, num_seqs
 
     # create (features, label) for training
-    def _fmt_input(self, frames, flows, saliency, bboxes, num_seqs):
+    def _fmt_input(self, frames, flows, saliency, bboxes, num_seqs, mask):
         # computes speed and direction from opticflow
         flow_x = flows[:, :, :, 0]
         flow_y = flows[:, :, :, 1]
@@ -285,7 +300,8 @@ class SpeedDirectionSaliencySeqInputFunc(SequenceInputFuncBase):
             'saliency': saliency,
             'direction': direction,
             'bbox': bboxes[0, :],
-            'num_seqs_in_video': num_seqs
+            'num_seqs_in_video': num_seqs,
+            'mask': mask  # TODO remove this once model trains with saliency maps
         }, bboxes[-1, :]
 
     ##### helper functions used in map setps #####

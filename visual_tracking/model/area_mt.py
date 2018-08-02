@@ -1,5 +1,3 @@
-from os import path
-
 import tensorflow as tf
 from keras import backend as K
 from keras.constraints import NonNeg
