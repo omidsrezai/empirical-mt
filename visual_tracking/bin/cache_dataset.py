@@ -33,6 +33,7 @@ def main(argv=None):
     parser.add_argument('--saliency-method', action='store', type=str, default='mb')
     parser.add_argument('--saliency-folderpath', action='store', type=str, default=None)
     parser.add_argument('--n-workers', action='store', type=int, default=1)
+    parser.add_argument('--batch-size', action='store', type=int, default=32)
 
     args = parser.parse_args(args=argv[1:])
     tf.logging.debug('args: %s' % args)
@@ -45,7 +46,7 @@ def main(argv=None):
     input_fn_train = SpeedDirectionSaliencySeqInputFunc(dataset_index_filepath='../../data/alov300++/alov300_train.csv',
                                                         input_folderpath='../../',
                                                         fixed_input_dim=args.fixed_input_dim,
-                                                        batch_size=args.train_batch_size,
+                                                        batch_size=args.batch_size,
                                                         num_epochs=1,
                                                         cache_id=args.train_dataset_cache_id,
                                                         flow_method=args.flow_method,
@@ -59,7 +60,7 @@ def main(argv=None):
     input_fn_eval = SpeedDirectionSaliencySeqInputFunc(dataset_index_filepath='../../data/alov300++/alov300_test.csv',
                                                        input_folderpath='../../',
                                                        fixed_input_dim=args.fixed_input_dim,
-                                                       batch_size=args.test_batch_size,
+                                                       batch_size=args.batch_size,
                                                        num_epochs=1,
                                                        cache_id=args.test_dataset_cache_id,
                                                        flow_method=args.flow_method,
