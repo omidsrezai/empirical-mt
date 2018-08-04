@@ -1,3 +1,5 @@
+from functools import partial
+
 import numpy as np
 import tensorflow as tf
 from skimage import transform, util
@@ -74,8 +76,8 @@ class SpeedDirectionSaliencySeqInputFunc(SequenceInputFuncBase):
                          .map(self._set_shapes, num_parallel_calls=self.n_workers)
 
         if self.data_augmentation:
-            dataset = dataset.map(self._random_90_rotation, num_parallel_calls=self.n_workers)\
-                .map(self._random_hflip, num_parallel_calls=self.n_workers)
+            dataset = dataset.map(self._random_flip_left_right, num_parallel_calls=self.n_workers)\
+                .map(self._random_flip_up_down, num_parallel_calls=self.n_workers)
 
         dataset = dataset.map(self._fmt_input, num_parallel_calls=self.n_workers)
 
@@ -212,53 +214,50 @@ class SpeedDirectionSaliencySeqInputFunc(SequenceInputFuncBase):
         def _rot90_k(k):
             # _rot_fn will work with arbitrary rotations apart from multiplies of 90 degrees,
             # but it is restricted to multiples of 90 degrees at the moment
-            def _rot_fn():
-                frames_rot = tf.image.rot90(frames, k=k)
-                flows_rot = tf.image.rot90(flows, k=k)
-                saliency_rot = tf.squeeze(tf.image.rot90(tf.expand_dims(saliency, axis=3), k=k))
+            frames_rot = tf.image.rot90(frames, k=k)
+            flows_rot = tf.image.rot90(flows, k=k)
+            saliency_rot = tf.squeeze(tf.image.rot90(tf.expand_dims(saliency, axis=3), k=k))
 
-                # rotation matrix transposed
-                rot_mat_t = tf.stack([tf.cos(k * (-np.pi / 2.)),
-                                    tf.sin(k * (-np.pi / 2.)),
-                                    -tf.sin(k * (-np.pi / 2.)),
-                                    tf.cos(k * (-np.pi / 2.))])
-                rot_mat_t = tf.cast(tf.reshape(rot_mat_t, [2, 2]), dtype=np.float32)
+            # rotation matrix transposed
+            rot_mat_t = tf.stack([tf.cos(k * (-np.pi / 2.)),
+                                tf.sin(k * (-np.pi / 2.)),
+                                -tf.sin(k * (-np.pi / 2.)),
+                                tf.cos(k * (-np.pi / 2.))])
+            rot_mat_t = tf.cast(tf.reshape(rot_mat_t, [2, 2]), dtype=np.float32)
 
-                # reshape bboxes into ((y_min, y_max), (x_min, x_max))
-                bboxes_transpose = tf.transpose(tf.reshape(bboxes, [-1, 2, 2]), perm=(0, 2, 1))
+            # reshape bboxes into ((y_min, y_max), (x_min, x_max))
+            bboxes_transpose = tf.transpose(tf.reshape(bboxes, [-1, 2, 2]), perm=(0, 2, 1))
 
-                # rotate bounding boxes for every frame
-                #  step 1: move origin to center of image: (y_m, x_m) = (y, x) - (0.5, 0.5)
-                #  step 2: rotate: (y_r, x_r) = rot_mat_t * (y_m, x_m)^T
-                #  step 3: move origin back to lower right corner: (y_r, x_r) + 0.5
-                bboxes_rot_transpose = tf.map_fn(lambda x: tf.matmul(rot_mat_t, x - 0.5),
-                                                 elems=bboxes_transpose,
-                                                 parallel_iterations=1) + 0.5
+            # rotate bounding boxes for every frame
+            #  step 1: move origin to center of image: (y_m, x_m) = (y, x) - (0.5, 0.5)
+            #  step 2: rotate: (y_r, x_r) = rot_mat_t * (y_m, x_m)^T
+            #  step 3: move origin back to lower right corner: (y_r, x_r) + 0.5
+            bboxes_rot_transpose = tf.map_fn(lambda x: tf.matmul(rot_mat_t, x - 0.5),
+                                             elems=bboxes_transpose,
+                                             parallel_iterations=1) + 0.5
 
-                # reshape bounding boxes back to y_min, x_min, y_max, x_max
-                bboxes_rot = tf.reshape(tf.transpose(bboxes_rot_transpose, perm=(0, 2, 1)), [-1, 4])
+            # reshape bounding boxes back to y_min, x_min, y_max, x_max
+            bboxes_rot = tf.reshape(tf.transpose(bboxes_rot_transpose, perm=(0, 2, 1)), [-1, 4])
 
-                bboxes_rot = tf.map_fn(self._reorder_coords_single_bbox, elems=bboxes_rot, parallel_iterations=1)
+            bboxes_rot = tf.map_fn(self._reorder_coords_single_bbox, elems=bboxes_rot, parallel_iterations=1)
 
-                return frames_rot, flows_rot, saliency_rot, bboxes_rot
+            return frames_rot, flows_rot, saliency_rot, bboxes_rot
 
-            return _rot_fn
 
         k = tf.random_uniform(shape=[], minval=0, maxval=4, dtype=np.int32)
 
-        rotated = tf.case({tf.equal(k, 0): _rot90_k(0),
-                          tf.equal(k, 1): _rot90_k(1),
-                          tf.equal(k, 2): _rot90_k(2),
-                          tf.equal(k, 3): _rot90_k(3)})
+        rotated = tf.case({tf.equal(k, 0): partial(_rot90_k, 0),
+                          tf.equal(k, 1): partial(_rot90_k, 1),
+                          tf.equal(k, 2): partial(_rot90_k, 2),
+                          tf.equal(k, 3): partial(_rot90_k, 3)})
 
         # unpack
         frames_rot, flows_rot, saliency_rot, bboxes_rot = rotated
 
         return frames_rot, flows_rot, saliency_rot, bboxes_rot, num_seqs
 
-    # TODO fix optic flow flip
     # random horizontal flip
-    def _random_hflip(self, frames, flows, saliency, bboxes, num_seqs):
+    def _random_flip_left_right(self, frames, flows, saliency, bboxes, num_seqs, mask):
         # draw from a bernouli distribution
         do_hflip = tf.random_uniform(shape=[], minval=0, maxval=2, dtype=tf.int32)
 
@@ -267,10 +266,13 @@ class SpeedDirectionSaliencySeqInputFunc(SequenceInputFuncBase):
             return frames, flows, saliency, bboxes
 
         def _hflip():
+            # horizontal flip
             frames_flipped = tf.reverse(frames, axis=[2])
             flows_flipped = tf.reverse(flows, axis=[2])
+            # change the sign of horizontal component of the flow
+            flows_flipped = tf.stack([-flows_flipped[:, :, :, 0], flows_flipped[:, :, :, 1]], axis=3)
             saliency_flipped = tf.reverse(saliency, axis=[2])
-            bboxes_flipped = tf.map_fn(self._flip_single_example, elems=bboxes, parallel_iterations=1)
+            bboxes_flipped = tf.map_fn(self._hflip_single_example, elems=bboxes, parallel_iterations=1)
 
             return frames_flipped, flows_flipped, saliency_flipped, bboxes_flipped
 
@@ -279,7 +281,36 @@ class SpeedDirectionSaliencySeqInputFunc(SequenceInputFuncBase):
         # unpack
         frames_flipped, flows_flipped, saliency_flipped, bboxes_flipped = flipped
 
-        return frames_flipped, flows_flipped, saliency_flipped, bboxes_flipped, num_seqs
+        # mask is symmetric with x = 0.5
+        return frames_flipped, flows_flipped, saliency_flipped, bboxes_flipped, num_seqs, mask
+
+    # random horizontal flip
+    def _random_flip_up_down(self, frames, flows, saliency, bboxes, num_seqs, mask):
+        # draw from a bernouli distribution
+        do_hflip = tf.random_uniform(shape=[], minval=0, maxval=2, dtype=tf.int32)
+
+        def _no_flip():
+            # identity
+            return frames, flows, saliency, bboxes
+
+        def _vflip():
+            # horizontal flip
+            frames_flipped = tf.reverse(frames, axis=[1])
+            flows_flipped = tf.reverse(flows, axis=[1])
+            # change the sign of the vertical component of the flow
+            flows_flipped = tf.stack([flows_flipped[:, :, :, 0], -flows_flipped[:, :, :, 1]], axis=3)
+            saliency_flipped = tf.reverse(saliency, axis=[1])
+            bboxes_flipped = tf.map_fn(self._vflip_single_example, elems=bboxes, parallel_iterations=1)
+
+            return frames_flipped, flows_flipped, saliency_flipped, bboxes_flipped
+
+        flipped = tf.cond(tf.cast(do_hflip, dtype=tf.bool), _vflip, _no_flip)
+
+        # unpack
+        frames_flipped, flows_flipped, saliency_flipped, bboxes_flipped = flipped
+
+        # mask is symmetric with x = 0.5
+        return frames_flipped, flows_flipped, saliency_flipped, bboxes_flipped, num_seqs, mask
 
     # create (features, label) for training
     def _fmt_input(self, frames, flows, saliency, bboxes, num_seqs, mask):
@@ -316,13 +347,22 @@ class SpeedDirectionSaliencySeqInputFunc(SequenceInputFuncBase):
         return tf.stack([y_min, x_min, y_max, x_max])
 
     # flip the x-axis for one bbox
-    def _flip_single_example(self, bbox):
+    def _hflip_single_example(self, bbox):
         y_min, x_min, y_max, x_max = tf.unstack(bbox)
 
         x_min_prime = 1 - x_max
         x_max_prime = 1 - x_min
 
         return tf.stack([y_min, x_min_prime, y_max, x_max_prime])
+
+    # flip the y-axis for one bbox
+    def _vflip_single_example(self, bbox):
+        y_min, x_min, y_max, x_max = tf.unstack(bbox)
+
+        y_min_prime = 1 - y_max
+        y_max_prime = 1 - y_min
+
+        return tf.stack([y_min_prime, x_min, y_max_prime, x_max])
 
     # project speed with tent basis
     def _project_speed_tents(self, speed_seq):

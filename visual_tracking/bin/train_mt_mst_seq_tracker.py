@@ -57,7 +57,7 @@ def main(argv=None):
                                                         shuffle=True,
                                                         shuffle_buffer_size=args.train_shuffle_buffer_size,
                                                         k=args.k,
-                                                        data_augmentation=False,
+                                                        data_augmentation=True,
                                                         **saliency_configs)
 
     input_fn_eval = SpeedDirectionSaliencySeqInputFunc(dataset_index_filepath='../../data/alov300++/alov300_test.csv',
