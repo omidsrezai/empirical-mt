@@ -6,7 +6,7 @@ import pickle
 from keras.layers import Input, merge, Dense, Lambda, Flatten, Reshape, Concatenate, TimeDistributed, LSTM
 from keras.layers.convolutional import Conv2D, MaxPooling2D
 from keras.layers.normalization import BatchNormalization
-from keras.constraints import NonNeg,NonPos
+from keras.constraints import NonNeg
 from keras.models import Model
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint, EarlyStopping
@@ -44,7 +44,7 @@ print('speed_gauss_.shape: ' + str(speed_gauss.get_shape))
 speed_N =  TimeDistributed(SmartInput(n_mt, regularizer=None, constraint=NonNeg()), name='SmartInput1')(speed_tent_tens)
 speed_NS = TimeDistributed(SmartInput(n_mt, regularizer=None, constraint=NonNeg()), name='SmartInput2')(speed_tent_tens)
 
-speed_dir_P = Multiply()([dir_,speed_gauss])
+speed_dir_P = Multiply()([dir_,speed_gauss]) # old MT features
 speed_dir_N = Multiply()([dir_,speed_N])
 
 ####################################################################
