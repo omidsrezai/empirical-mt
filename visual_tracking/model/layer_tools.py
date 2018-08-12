@@ -1,4 +1,5 @@
 import tensorflow as tf
+from surround.smart_example import SmartConv2D as SelConv2d
 
 
 def dense(x, units, name,
@@ -104,7 +105,95 @@ def time_map(x_timesteps, f, name):
     return y_timesteps
 
 
-def chann_sel_conv2d(x, kernel_size, filters,
+def chann_sel_15_by_15_conv2d(x, n_chann, k_constraint, l2_reg_scale=0., dp=0., impl=1, kernel_summary=False):
+    if impl == 0:
+        with tf.variable_scope('chann_sel_conv2d'):
+            conv2d = SelConv2d(n_chann,
+                               (15, 15),
+                               activation=None,
+                               use_bias=False,
+                               padding="SAME",
+                               kernel_constraint=k_constraint,
+                               name='conv2d',
+                               kernel_initializer='glorot_uniform')
+
+            y = tf.identity(conv2d(x))  # fixes no out_bound bug
+
+    elif impl == 1:
+        y = chann_reg_conv2d(x, constraint=k_constraint,
+                             filters=n_chann,
+                             kernel_size=(15, 15),
+                             kernel_summary=kernel_summary,
+                             name='chann_sel_conv2d',
+                             kernel_l2_reg_scale=l2_reg_scale)
+
+    elif impl == 2:
+        y = one_to_one_conv2d(x, constraint=k_constraint,
+                              kernel_size=(15, 15),
+                              kernel_summary=kernel_summary,
+                              name='chann_sel_conv2d',
+                              kernel_l2_reg_scale=l2_reg_scale)
+
+    else:
+        raise ValueError('Unkown chann_sel_impl %s' % impl)
+
+    if dp > 0.:
+        y = tf.layers.dropout(y, rate=dp)
+
+    return y
+
+
+def one_to_one_conv2d(x, kernel_size,
+                     constraint,
+                     kernel_l2_reg_scale=0.,
+                     max_im_outputs=64,
+                     k_init_uniform=True,
+                     activity_summary=True,
+                     kernel_summary=True,
+                     name='chann_sel_conv2d'):
+    n_in_chann = x.get_shape().as_list()[3]
+
+    kernels = tf.get_variable('kernel',
+                             shape=[n_in_chann] + list(kernel_size) + [1, 1],
+                             initializer=tf.contrib.layers.xavier_initializer_conv2d(k_init_uniform),
+                             dtype=tf.float32,
+                             constraint=constraint,
+                             regularizer=tf.contrib.layers.l2_regularizer(kernel_l2_reg_scale))
+
+    conv = []
+    for i in range(0, n_in_chann):
+        out_chann = tf.nn.conv2d(tf.expand_dims(x[:, :, :, i], axis=3),
+                                 kernels[i],
+                                 strides=[1, 1, 1, 1],
+                                 padding='SAME')
+        conv.append(out_chann)
+    conv = tf.concat(conv, axis=3)
+
+    if activity_summary:
+        tf.summary.histogram('%s_activations' % name, conv)
+        tf.summary.image('%s_feature_maps_l2_norm' % name,
+                         tf.norm(conv, axis=3, ord=2, keep_dims=True),
+                         max_outputs=max_im_outputs)
+
+    if kernel_summary:
+        tf.summary.histogram('kernel', kernels)
+        tf.summary.scalar('kernel', tf.norm(kernels, ord=2))
+
+        with tf.name_scope('visualize_selected_kernels'):
+            for i in range(n_in_chann):
+                kernel = tf.squeeze(kernels[i])
+
+                scaled = tf.abs(kernel)
+                scaled = (scaled - tf.reduce_min(scaled)) / (tf.reduce_max(scaled) - tf.reduce_min(scaled))
+
+                tf.summary.image('out_chann%s_kernel' % i,
+                                 tf.expand_dims(tf.expand_dims(scaled, axis=2), axis=0),
+                                 max_outputs=1)
+
+    return conv
+
+
+def chann_reg_conv2d(x, kernel_size, filters,
                      constraint,
                      kernel_l2_reg_scale=0.,
                      max_im_outputs=64,
@@ -129,8 +218,11 @@ def chann_sel_conv2d(x, kernel_size, filters,
         #kernel_in_gate = tf.nn.sigmoid(kernel_pooled_centered)
         #kernel_in_gate = tf.exp(tf.div(kernel_pooled_centered, 0.09))
 
-        kernel_pooled = _compute_conv_kernel_gradient_norm(kernel)
-        kernel_pooled_centered = (kernel_pooled - tf.reduce_min(kernel_pooled, axis=0)) / (tf.reduce_max(kernel_pooled) - tf.reduce_min(kernel_pooled))
+        # kernel_pooled = _compute_conv_kernel_gradient_norm(kernel)
+        # kernel_pooled = tf.reduce_sum(tf.abs(kernel), axis=(0, 1))
+        # kernel_pooled_centered = (kernel_pooled - tf.reduce_min(kernel_pooled, axis=0)) / (tf.reduce_max(kernel_pooled) - tf.reduce_min(kernel_pooled))
+        kernel_pooled = 1 - tf.eye(filters)
+        kernel_pooled_centered = kernel_pooled
         kernel_in_gate = tf.exp(-tf.div(tf.square(kernel_pooled_centered), 0.01))
         #kernel_in_gate = tf.nn.softmax(1 - kernel_pooled_centered, axis=0)
 

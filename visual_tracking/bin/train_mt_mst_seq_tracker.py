@@ -4,8 +4,10 @@ sys.path.append('../../')
 from datetime import datetime
 from time import time
 import argparse
+from os import path
 
 import tensorflow as tf
+import numpy as np
 
 from visual_tracking.model.mt_mst_sequence_tracker import MTMSTSeqTracker
 from visual_tracking.data_pipline.speed_direction_saliency_input import SpeedDirectionSaliencySeqInputFunc
@@ -13,6 +15,23 @@ from visual_tracking.data_pipline.speed_direction_saliency_input import SpeedDir
 SPEED_SCALER = 4
 
 tf.logging.set_verbosity(tf.logging.DEBUG)
+
+best_metric = 0
+
+KERNEL_PATH = 'mt_over_time/time_map_area_mt/area_mt/%s/chann_sel_conv2d/kernel'
+
+
+def _save_best_kernels(model, model_name):
+    tf.logging.info('saving best kernels...')
+
+    to_save = {}
+
+    for area_name in ['excitatory', 'dir_sel_sup', 'non_dir_sel_sup']:
+        kernels = model.get_variable_value(KERNEL_PATH % area_name)
+        to_save[area_name] = kernels
+
+    np.savez('../weights/%s_weights' % path.basename(model_name), **to_save)
+    return
 
 
 def main(argv=None):
@@ -99,6 +118,9 @@ def main(argv=None):
         m.train(input_fn=input_fn_train)
         metrics = m.evaluate(input_fn=input_fn_eval)
         tf.logging.info(metrics)
+
+        if (metrics['mean_iou'] > best_metric):
+            _save_best_kernels(m, model_name)
 
         epochs += 1
 

@@ -6,6 +6,7 @@ from visual_tracking.model.layer_tools import conv2d
 tf_sess = tf.Session()
 K.set_session(tf_sess)
 
+
 class AreaMST(object):
 
     def __init__(self, n_chann, max_im_outputs=64, dropout=0., l2_reg_scale=0.):

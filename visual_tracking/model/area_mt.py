@@ -2,9 +2,9 @@ import tensorflow as tf
 from keras import backend as K
 from keras.constraints import NonNeg
 
-from surround.smart_example import SmartInput as TentLinearComb, AddBiasNonlinear, SmartConv2D as SelConv2d
+from surround.smart_example import SmartInput as TentLinearComb, AddBiasNonlinear
 from tuning import SpeedTuning, DirectionTuning
-from visual_tracking.model.layer_tools import conv2d, chann_sel_conv2d
+from visual_tracking.model.layer_tools import conv2d, chann_sel_15_by_15_conv2d
 from visual_tracking.utils.keras_utils import NonPos
 from visual_tracking.utils.tensorboad_utils import feature_maps_summary, mt_conv_kernels_summary
 
@@ -103,9 +103,12 @@ class AreaMT(object):
                 excitatory = tf.multiply(excitatory, attention_tun)
 
             excitatory = tf.layers.batch_normalization(excitatory)
-            excitatory = self._15x15_chann_sel_conv2d(excitatory,
-                                                      k_constraint=NonNeg(),
-                                                      dp=self.chann_sel_dp)
+            excitatory = chann_sel_15_by_15_conv2d(excitatory,
+                                                   n_chann=self.n_chann,
+                                                   k_constraint=NonNeg(),
+                                                   l2_reg_scale=0.005,
+                                                   dp=self.chann_sel_dp,
+                                                   kernel_summary=not self._allocated)
 
             feature_maps_summary('excitatory',
                                  excitatory,
@@ -130,9 +133,11 @@ class AreaMT(object):
                 dir_selective_sup = tf.multiply(dir_selective_sup, attention_tun)
 
             dir_selective_sup = tf.layers.batch_normalization(dir_selective_sup)
-            dir_selective_sup = self._15x15_chann_sel_conv2d(dir_selective_sup,
-                                                             k_constraint=NonPos(),
-                                                             dp=self.chann_sel_dp)
+            dir_selective_sup = chann_sel_15_by_15_conv2d(dir_selective_sup,
+                                                          n_chann=self.n_chann,
+                                                          l2_reg_scale=0.005,
+                                                          k_constraint=NonPos(),
+                                                          dp=self.chann_sel_dp)
 
             feature_maps_summary('direction_selective_sup',
                                  dir_selective_sup,
@@ -156,9 +161,11 @@ class AreaMT(object):
                 speed_tun_non_dir_sel_sup = tf.multiply(speed_tun_non_dir_sel_sup, attention_tun)
 
             non_dir_sel_sup = tf.layers.batch_normalization(speed_tun_non_dir_sel_sup)
-            non_dir_sel_sup = self._15x15_chann_sel_conv2d(non_dir_sel_sup,
-                                                           k_constraint=NonPos(),
-                                                           dp=self.chann_sel_dp)
+            non_dir_sel_sup = chann_sel_15_by_15_conv2d(non_dir_sel_sup,
+                                                        n_chann=self.n_chann,
+                                                        l2_reg_scale=0.005,
+                                                        k_constraint=NonPos(),
+                                                        dp=self.chann_sel_dp)
 
             feature_maps_summary('non_direction_selective_sup',
                                  non_dir_sel_sup,
@@ -195,33 +202,3 @@ class AreaMT(object):
                                  kernel_l2_reg_scale=self.l2_reg_scale)
 
         return mt_activity
-
-    def _15x15_chann_sel_conv2d(self, x, k_constraint, dp=0.):
-        if self.chann_sel_impl == 0:
-            with tf.variable_scope('chann_sel_conv2d'):
-                conv2d = SelConv2d(self.n_chann,
-                                   (15, 15),
-                                   activation=None,
-                                   use_bias=False,
-                                   padding="SAME",
-                                   kernel_constraint=k_constraint,
-                                   name='conv2d',
-                                   kernel_initializer='glorot_uniform')
-
-                y = tf.identity(conv2d(x)) # fixes no out_bound bug
-
-        elif self.chann_sel_impl == 1:
-            y = chann_sel_conv2d(x, constraint=k_constraint,
-                                 filters=self.n_chann,
-                                 kernel_size=(15, 15),
-                                 kernel_summary=not self._allocated,
-                                 name='chann_sel_conv2d',
-                                 kernel_l2_reg_scale=0.)
-
-        else:
-            raise ValueError('Unkown chann_sel_impl %s' % self.chann_sel_impl)
-
-        if dp > 0.:
-            y = tf.layers.dropout(y, rate=dp)
-
-        return y

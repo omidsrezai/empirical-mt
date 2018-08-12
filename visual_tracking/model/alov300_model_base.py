@@ -59,30 +59,45 @@ class ALOV300ModelBase(object):
             return tf.estimator.EstimatorSpec(mode=mode, loss=total_loss, train_op=train_op)
 
         # EVAL mode
-        eval_metrics_ops = self._get_eval_metrics_ops(p_delta=pred_box - prev_box,
-                                                      t_delta=ground_truth_box - prev_box)
+        eval_metrics_ops = self._get_eval_metrics_ops(y_true=y, y_pred=y_hat,
+                                                      delta_pred=pred_box - prev_box,
+                                                      delta_true=ground_truth_box - prev_box)
 
         return tf.estimator.EstimatorSpec(mode=mode, loss=bbox_loss, eval_metric_ops=eval_metrics_ops)
 
-    def _get_eval_metrics_ops(self, t_delta, p_delta):
+    def _get_eval_metrics_ops(self, y_true, y_pred, delta_true, delta_pred):
         _dim_ids = ['y_min', 'x_min', 'y_max', 'x_max']
-        pred_mean = tf.reduce_mean(p_delta, axis=0)
+
+        # computes IoU
+        y_min_t, x_min_t, y_max_t, x_max_t = y_true[:, 0], y_true[:, 1], y_true[:, 2], y_true[:, 3]
+        y_min_p, x_min_p, y_max_p, x_max_p = y_pred[:, 0], y_pred[:, 1], y_pred[:, 2], y_pred[:, 3]
+
+        bbox_area_true = tf.multiply(y_max_t - y_min_t, x_max_t - x_min_t)
+        bbox_area_pred = tf.multiply(y_max_p - y_min_p, x_max_p - x_min_p)
+
+        intersec = tf.multiply(tf.minimum(y_max_t, y_max_p) - tf.maximum(y_min_t, y_min_p),
+                               tf.minimum(x_max_t, x_max_p) - tf.maximum(x_min_t, x_min_p))
+        union = bbox_area_true + bbox_area_pred - intersec
+        iou = tf.divide(intersec, union + tf.keras.backend.epsilon())
 
         metrics_ops = {
-            'l1_loss': tf.metrics.mean_absolute_error(labels=t_delta, predictions=p_delta),
-            'l2_loss': tf.metrics.mean_squared_error(labels=t_delta, predictions=p_delta),
+            'mean_iou': tf.metrics.mean(iou),
+            'l1_loss': tf.metrics.mean_absolute_error(labels=delta_true, predictions=delta_pred),
+            'l2_loss': tf.metrics.mean_squared_error(labels=delta_true, predictions=delta_pred),
             'corr_concat': tf.contrib.metrics\
-                .streaming_pearson_correlation(predictions=tf.reshape(t_delta, [-1]),
-                                               labels=tf.reshape(p_delta, [-1]))
+                .streaming_pearson_correlation(predictions=tf.reshape(delta_true, [-1]),
+                                               labels=tf.reshape(delta_pred, [-1]))
         }
 
+        # computes correlation for 4 predicted numbers
+        mean_pred = tf.reduce_mean(delta_pred, axis=0)
         for i, v in enumerate(_dim_ids):
-            metrics_ops['%s_mean' % v] = tf.metrics.mean(p_delta[:, i])
-            metrics_ops['%s_var' % v] = tf.metrics.mean(tf.square(p_delta[:, i] - pred_mean[i]))
+            metrics_ops['%s_mean' % v] = tf.metrics.mean(delta_pred[:, i])
+            metrics_ops['%s_var' % v] = tf.metrics.mean(tf.square(delta_pred[:, i] - mean_pred[i]))
             metrics_ops['%s_covar' % v] = tf.contrib.metrics\
-                .streaming_covariance(predictions=p_delta[:, i], labels=t_delta[:, i])
+                .streaming_covariance(predictions=delta_pred[:, i], labels=delta_true[:, i])
             metrics_ops['%s_corr' % v] = tf.contrib.metrics\
-                .streaming_pearson_correlation(predictions=p_delta[:, i], labels=t_delta[:, i])
+                .streaming_pearson_correlation(predictions=delta_pred[:, i], labels=delta_true[:, i])
 
         return metrics_ops
 

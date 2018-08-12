@@ -59,13 +59,13 @@ class MTMSTSeqTracker(ALOV300ModelBase):
 
         with tf.variable_scope('mt_over_time'):
             area_mt = AreaMT(max_im_outputs=4,
-                             n_chann=32,
+                             n_chann=64,
                              empirical_excitatory_params=self.mt_params,
                              speed_scalar=self.speed_scalar,
                              chann_sel_dp=0.,
                              activity_dp=0.,
                              attention_gains=self.mt_attention_gains,
-                             conv_chann=32,
+                             conv_chann=64,
                              l2_reg_scale=0.005)
 
             mt_activity = time_map((speed_inputs, speed_input_tents, direction_input),
@@ -95,34 +95,28 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              tf.norm(time_pooled, ord=2, axis=3, keep_dims=True),
                              max_outputs=self.max_im_outputs)
 
-        with tf.variable_scope('add_prev_bbox'):
-            prev_bbox = tf.expand_dims(features['mask'], axis=3)
-            tf.summary.image('mask', prev_bbox, max_outputs=self.max_im_outputs)
-            prev_bbox = tf.layers.average_pooling2d(prev_bbox, pool_size=(19, 19), strides=(19, 19))
 
-            masked = tf.concat([time_pooled, prev_bbox], axis=3)
+        conv1 = conv2d(time_pooled,
+                       kernel_size=(3, 3),
+                       filters=128,
+                       max_pool=None,
+                       strides=(1, 1),
+                       batch_norm=True,
+                       dropout=0.,
+                       act=tf.nn.elu,
+                       name='3x3conv128',
+                       kernel_l2_reg_scale=0.01)
 
-            time_pooled_masked = conv2d(masked,
-                                        kernel_size=(3, 3),
-                                        filters=128,
-                                        max_pool=None,
-                                        strides=(1, 1),
-                                        batch_norm=True,
-                                        dropout=0.,
-                                        act=tf.nn.elu,
-                                        name='conv_with_mask',
-                                        kernel_l2_reg_scale=0.01)
-
-        dense1 = dense(tf.layers.flatten(time_pooled_masked),
+        dense1 = dense(tf.layers.flatten(conv1),
                        units=256,
-                       name='dense1',
+                       name='dense256',
                        act=tf.nn.elu,
                        batch_norm=True,
                        kernel_l2_reg_scale=0.01)
 
         dense2 = dense(dense1,
                        units=64,
-                       name='dense2',
+                       name='dense64',
                        act=tf.nn.elu,
                        batch_norm=True,
                        kernel_l2_reg_scale=0.01)
