@@ -257,7 +257,8 @@ def chann_reg_conv2d(x, kernel_size, filters,
                     selected_in_kernel = kernel[:, :, tf.argmin(weights), i]
 
                     normed = tf.abs(selected_in_kernel)
-                    normed = (normed - tf.reduce_min(normed)) / (tf.reduce_max(normed) - tf.reduce_min(normed))
+                    normed = (normed - tf.reduce_min(normed)) / \
+                             (tf.reduce_max(normed) - tf.reduce_min(normed) + tf.keras.backend.epsilon())
 
                     tf.summary.image('out_chann%s_kernel' % i,
                                      tf.expand_dims(tf.expand_dims(normed, axis=2), axis=0),

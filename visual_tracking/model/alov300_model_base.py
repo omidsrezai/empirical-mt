@@ -14,31 +14,22 @@ class ALOV300ModelBase(object):
         self.lr_decay_rate = lr_decay_rate
         self.loss = loss
 
-    def _compile(self,
-                 mode,
-                 frame1,
-                 frame2,
-                 prev_box,
-                 ground_truth_box,
-                 pred_box,
-                 y_hat,
-                 y):
-
+    def _compile(self, mode, frame1, frame2, bbox_frame1, bbox_true, bbox_pred, y_pred, y_true):
         # PREDICT mode
         if mode == tf.estimator.ModeKeys.PREDICT:
-            return tf.estimator.EstimatorSpec(mode=mode, predictions=pred_box)
+            return tf.estimator.EstimatorSpec(mode=mode, predictions=bbox_pred)
 
         # TRAIN mode
-        self._train_prediction_summary(prev_bbox=prev_box,
-                                       p_bbox=pred_box,
-                                       t_bbox=ground_truth_box,
+        self._train_prediction_summary(bbox_frame1=bbox_frame1,
+                                       bbox_pred=bbox_pred,
+                                       bbox_true=bbox_true,
                                        frame1=frame1,
                                        frame2=frame2)
 
         if self.loss == 'l1':
-            bbox_loss = tf.losses.absolute_difference(labels=y, predictions=y_hat)
+            bbox_loss = tf.losses.absolute_difference(labels=y_true, predictions=y_pred)
         elif self.loss == 'l2':
-            bbox_loss = tf.losses.mean_squared_error(labels=y, predictions=y_hat)
+            bbox_loss = tf.losses.mean_squared_error(labels=y_true, predictions=y_pred)
         else:
             raise ValueError('%s loss undefined' % self.loss)
 
@@ -59,9 +50,9 @@ class ALOV300ModelBase(object):
             return tf.estimator.EstimatorSpec(mode=mode, loss=total_loss, train_op=train_op)
 
         # EVAL mode
-        eval_metrics_ops = self._get_eval_metrics_ops(y_true=y, y_pred=y_hat,
-                                                      delta_pred=pred_box - prev_box,
-                                                      delta_true=ground_truth_box - prev_box)
+        eval_metrics_ops = self._get_eval_metrics_ops(y_true=y_true, y_pred=y_pred,
+                                                      delta_pred=bbox_pred - bbox_frame1,
+                                                      delta_true=bbox_true - bbox_frame1)
 
         return tf.estimator.EstimatorSpec(mode=mode, loss=bbox_loss, eval_metric_ops=eval_metrics_ops)
 
@@ -101,29 +92,27 @@ class ALOV300ModelBase(object):
 
         return metrics_ops
 
-    def _summary_images_with_bbox(self, images, boxes, name):
-        boxes_3d = tf.stack([boxes, boxes, boxes], axis=1)
-        annotated_im = tf.image.draw_bounding_boxes(images, boxes_3d)
+    def _summary_images_with_bbox(self, images, bboxes, name):
+        annotated_im = tf.image.draw_bounding_boxes(images, bboxes)
         tf.summary.image(name, annotated_im, max_outputs=self.max_im_outputs)
 
-    def _train_prediction_summary(self, prev_bbox, p_bbox, t_bbox, frame1, frame2):
+    def _train_prediction_summary(self, bbox_frame1, bbox_pred, bbox_true, frame1, frame2):
         with tf.name_scope('train_prediction_summary'):
 
             # draw predicted bounding box
             with tf.name_scope('draw_bboxes'):
                 with tf.name_scope('frame1'):
-                    self._summary_images_with_bbox(frame1, prev_bbox, name='frame1_box')
+                    self._summary_images_with_bbox(frame1, tf.expand_dims(bbox_frame1, axis=1), name='frame1_box')
 
                 with tf.name_scope('frame2'):
-                    self._summary_images_with_bbox(frame2, t_bbox, name='frame2_box')
-                    self._summary_images_with_bbox(frame2, p_bbox, name='frame2_predicted_box')
+                    self._summary_images_with_bbox(frame2, tf.stack([bbox_pred, bbox_true], axis=1), name='frame2_box')
 
             # plot predicted offsets
             _dim_ids = ['y_min', 'x_min', 'y_max', 'x_max']
 
             with tf.name_scope('prediction_metrics/delta'):
-                p_delta = p_bbox - prev_bbox
-                t_delta = t_bbox - prev_bbox
+                p_delta = bbox_pred - bbox_frame1
+                t_delta = bbox_true - bbox_frame1
 
                 t_mean, t_var = tf.nn.moments(t_delta, axes=0)
                 p_mean, p_var = tf.nn.moments(p_delta, axes=0)
@@ -146,5 +135,5 @@ class ALOV300ModelBase(object):
 
             # plot losses
             with tf.name_scope('losses'):
-                tf.summary.scalar('l1_loss', tf.reduce_mean(tf.abs(p_bbox - t_bbox)))
-                tf.summary.scalar('l2_loss', tf.reduce_mean(tf.square(p_bbox - t_bbox)))
+                tf.summary.scalar('l1_loss', tf.reduce_mean(tf.abs(bbox_pred - bbox_true)))
+                tf.summary.scalar('l2_loss', tf.reduce_mean(tf.square(bbox_pred - bbox_true)))

@@ -137,7 +137,8 @@ class AreaMT(object):
                                                           n_chann=self.n_chann,
                                                           l2_reg_scale=0.005,
                                                           k_constraint=NonPos(),
-                                                          dp=self.chann_sel_dp)
+                                                          dp=self.chann_sel_dp,
+                                                          kernel_summary=not self._allocated)
 
             feature_maps_summary('direction_selective_sup',
                                  dir_selective_sup,
@@ -165,7 +166,8 @@ class AreaMT(object):
                                                         n_chann=self.n_chann,
                                                         l2_reg_scale=0.005,
                                                         k_constraint=NonPos(),
-                                                        dp=self.chann_sel_dp)
+                                                        dp=self.chann_sel_dp,
+                                                        kernel_summary=not self._allocated)
 
             feature_maps_summary('non_direction_selective_sup',
                                  non_dir_sel_sup,

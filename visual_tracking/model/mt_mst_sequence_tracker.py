@@ -59,13 +59,13 @@ class MTMSTSeqTracker(ALOV300ModelBase):
 
         with tf.variable_scope('mt_over_time'):
             area_mt = AreaMT(max_im_outputs=4,
-                             n_chann=64,
+                             n_chann=24,
                              empirical_excitatory_params=self.mt_params,
                              speed_scalar=self.speed_scalar,
                              chann_sel_dp=0.,
                              activity_dp=0.,
                              attention_gains=self.mt_attention_gains,
-                             conv_chann=64,
+                             conv_chann=24,
                              l2_reg_scale=0.005)
 
             mt_activity = time_map((speed_inputs, speed_input_tents, direction_input),
@@ -78,7 +78,7 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              max_outputs=self.max_im_outputs)
 
         with tf.variable_scope('mst_over_time'):
-            area_mst = AreaMST(n_chann=64,
+            area_mst = AreaMST(n_chann=32,
                                max_im_outputs=4,
                                dropout=0.,
                                l2_reg_scale=0.005)
@@ -131,8 +131,8 @@ class MTMSTSeqTracker(ALOV300ModelBase):
         return self._compile(mode=mode,
                              frame1=features['frames'][:, 0],
                              frame2=features['frames'][:, -1],
-                             prev_box=features['bbox'],
-                             ground_truth_box=labels,
-                             y_hat=pbbox,
-                             pred_box=pbbox,
-                             y=labels)
+                             bbox_frame1=features['bbox'],
+                             bbox_true=labels,
+                             y_pred=pbbox,
+                             bbox_pred=pbbox,
+                             y_true=labels)
