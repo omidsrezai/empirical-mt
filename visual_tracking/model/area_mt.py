@@ -49,10 +49,10 @@ class AreaMT(object):
 
             mt_activity = self._integrate_components(dir_selective_sup, excitatory, non_dir_sel_sup)
 
-            if (not self._allocated and self.chann_sel_impl == 0):
+            if not self._allocated and self.chann_sel_impl == 0:
                 mt_conv_kernels_summary()
 
-        self._allocated = True # flags the variables have been allocated
+        self._allocated = True  # flags the variables have been allocated
 
         return mt_activity
 

@@ -105,7 +105,7 @@ def time_map(x_timesteps, f, name):
     return y_timesteps
 
 
-def chann_sel_15_by_15_conv2d(x, n_chann, k_constraint, l2_reg_scale=0., dp=0., impl=1, kernel_summary=False):
+def chann_sel_15_by_15_conv2d(x, n_chann, k_constraint, l2_reg_scale=0., dp=0., impl=2, kernel_summary=False):
     if impl == 0:
         with tf.variable_scope('chann_sel_conv2d'):
             conv2d = SelConv2d(n_chann,
@@ -151,44 +151,47 @@ def one_to_one_conv2d(x, kernel_size,
                      activity_summary=True,
                      kernel_summary=True,
                      name='chann_sel_conv2d'):
-    n_in_chann = x.get_shape().as_list()[3]
+    with tf.variable_scope(name) as scope:
+        n_in_chann = x.get_shape().as_list()[3]
 
-    kernels = tf.get_variable('kernel',
-                             shape=[n_in_chann] + list(kernel_size) + [1, 1],
-                             initializer=tf.contrib.layers.xavier_initializer_conv2d(k_init_uniform),
-                             dtype=tf.float32,
-                             constraint=constraint,
-                             regularizer=tf.contrib.layers.l2_regularizer(kernel_l2_reg_scale))
+        kernel = tf.get_variable('kernel',
+                                 shape=(15, 15, n_in_chann, n_in_chann),
+                                 initializer=tf.contrib.layers.xavier_initializer_conv2d(k_init_uniform),
+                                 dtype=tf.float32,
+                                 constraint=constraint,
+                                 regularizer=tf.contrib.layers.l2_regularizer(kernel_l2_reg_scale))
 
-    conv = []
-    for i in range(0, n_in_chann):
-        out_chann = tf.nn.conv2d(tf.expand_dims(x[:, :, :, i], axis=3),
-                                 kernels[i],
-                                 strides=[1, 1, 1, 1],
-                                 padding='SAME')
-        conv.append(out_chann)
-    conv = tf.concat(conv, axis=3)
+        kernel_selector = tf.eye(n_in_chann)
 
-    if activity_summary:
-        tf.summary.histogram('%s_activations' % name, conv)
-        tf.summary.image('%s_feature_maps_l2_norm' % name,
-                         tf.norm(conv, axis=3, ord=2, keep_dims=True),
-                         max_outputs=max_im_outputs)
+        kernel_in_mask = tf.expand_dims(tf.expand_dims(kernel_selector, axis=0), axis=1)
+        kernel_in_mask = tf.tile(kernel_in_mask, list(kernel_size) + [1, 1])
 
-    if kernel_summary:
-        tf.summary.histogram('kernel', kernels)
-        tf.summary.scalar('kernel', tf.norm(kernels, ord=2))
+        kernel_masked = kernel * kernel_in_mask
+        conv = tf.nn.conv2d(x, kernel_masked,
+                            strides=[1, 1, 1, 1],
+                            padding='SAME')
 
-        with tf.name_scope('visualize_selected_kernels'):
-            for i in range(n_in_chann):
-                kernel = tf.squeeze(kernels[i])
+        if activity_summary:
+            tf.summary.histogram('%s_activations' % name, conv)
+            tf.summary.image('%s_feature_maps_l2_norm' % name,
+                             tf.norm(conv, axis=3, ord=2, keep_dims=True),
+                             max_outputs=max_im_outputs)
 
-                scaled = tf.abs(kernel)
-                scaled = (scaled - tf.reduce_min(scaled)) / (tf.reduce_max(scaled) - tf.reduce_min(scaled))
+        if kernel_summary:
+            tf.summary.histogram('kernel', kernel)
+            tf.summary.scalar('kernel', tf.norm(kernel, ord=2))
 
-                tf.summary.image('out_chann%s_kernel' % i,
-                                 tf.expand_dims(tf.expand_dims(scaled, axis=2), axis=0),
-                                 max_outputs=1)
+            with tf.name_scope('visualize_selected_kernels'):
+                for i in range(n_in_chann):
+                    selected_in_kernel = kernel[:, :, i, i]
+
+                    normed = tf.abs(selected_in_kernel)
+                    normed = (normed - tf.reduce_min(normed)) / \
+                             (tf.reduce_max(normed) - tf.reduce_min(normed) + tf.keras.backend.epsilon())
+
+                    tf.summary.image('out_chann%s_kernel' % i,
+                                     tf.expand_dims(tf.expand_dims(normed, axis=2), axis=0),
+                                     max_outputs=1)
 
     return conv
 
