@@ -121,7 +121,7 @@ def main(argv=None):
         tf.logging.info(metrics)
 
         if metrics['mean_iou'] > best_metric:
-            best_metric = best_metric['mean_iou']
+            best_metric = metrics['mean_iou']
             _save_best_kernels(m, model_name)
 
         epochs += 1
