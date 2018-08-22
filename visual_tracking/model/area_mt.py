@@ -23,6 +23,7 @@ class AreaMT(object):
                  max_im_outputs,
                  activity_dp,
                  l2_reg_scale,
+                 surround_l2_reg_scale,
                  chann_sel_impl=1):
         self.speed_scalar = speed_scalar
         self.excitatory_params = empirical_excitatory_params
@@ -35,6 +36,7 @@ class AreaMT(object):
         self.conv_chann = conv_chann
         self.l2_reg_scale = l2_reg_scale
         self.chann_sel_impl = chann_sel_impl
+        self.surround_l2_reg_scale = surround_l2_reg_scale
 
     def __call__(self, speed_input, speed_input_tents, direction_input, saliency_input=None, contrast_input=None):
         with tf.variable_scope("area_mt", reuse=self._allocated):
@@ -106,7 +108,7 @@ class AreaMT(object):
             excitatory = chann_sel_15_by_15_conv2d(excitatory,
                                                    n_chann=self.n_chann,
                                                    k_constraint=NonNeg(),
-                                                   l2_reg_scale=0.005,
+                                                   l2_reg_scale=self.surround_l2_reg_scale,
                                                    dp=self.chann_sel_dp,
                                                    kernel_summary=not self._allocated)
 
@@ -135,7 +137,7 @@ class AreaMT(object):
             dir_selective_sup = tf.layers.batch_normalization(dir_selective_sup)
             dir_selective_sup = chann_sel_15_by_15_conv2d(dir_selective_sup,
                                                           n_chann=self.n_chann,
-                                                          l2_reg_scale=0.005,
+                                                          l2_reg_scale=self.surround_l2_reg_scale,
                                                           k_constraint=NonPos(),
                                                           dp=self.chann_sel_dp,
                                                           kernel_summary=not self._allocated)
@@ -164,7 +166,7 @@ class AreaMT(object):
             non_dir_sel_sup = tf.layers.batch_normalization(speed_tun_non_dir_sel_sup)
             non_dir_sel_sup = chann_sel_15_by_15_conv2d(non_dir_sel_sup,
                                                         n_chann=self.n_chann,
-                                                        l2_reg_scale=0.005,
+                                                        l2_reg_scale=self.surround_l2_reg_scale,
                                                         k_constraint=NonPos(),
                                                         dp=self.chann_sel_dp,
                                                         kernel_summary=not self._allocated)

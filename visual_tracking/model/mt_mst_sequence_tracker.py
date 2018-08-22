@@ -59,14 +59,15 @@ class MTMSTSeqTracker(ALOV300ModelBase):
 
         with tf.variable_scope('mt_over_time'):
             area_mt = AreaMT(max_im_outputs=4,
-                             n_chann=24,
+                             n_chann=64,
                              empirical_excitatory_params=self.mt_params,
                              speed_scalar=self.speed_scalar,
                              chann_sel_dp=0.,
                              activity_dp=0.,
                              attention_gains=self.mt_attention_gains,
                              conv_chann=24,
-                             l2_reg_scale=0.005)
+                             l2_reg_scale=0.001,
+                             surround_l2_reg_scale=0.0001)
 
             mt_activity = time_map((speed_inputs, speed_input_tents, direction_input),
                                    area_mt,
@@ -78,10 +79,10 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              max_outputs=self.max_im_outputs)
 
         with tf.variable_scope('mst_over_time'):
-            area_mst = AreaMST(n_chann=32,
+            area_mst = AreaMST(n_chann=64,
                                max_im_outputs=4,
                                dropout=0.,
-                               l2_reg_scale=0.005)
+                               l2_reg_scale=0.001)
             mst_activity = time_map(mt_activity, area_mst, 'area_mst')
 
             tf.summary.histogram('mst_activity', mst_activity)
