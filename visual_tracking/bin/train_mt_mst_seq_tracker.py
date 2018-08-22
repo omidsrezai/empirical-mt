@@ -113,13 +113,15 @@ def main(argv=None):
     m = tf.estimator.Estimator(model_fn, model_dir=model_dir)
 
     epochs = 0
+    best_metric = 0
 
     while True:
         m.train(input_fn=input_fn_train)
         metrics = m.evaluate(input_fn=input_fn_eval)
         tf.logging.info(metrics)
 
-        if (metrics['mean_iou'] > best_metric):
+        if metrics['mean_iou'] > best_metric:
+            best_metric = best_metric['mean_iou']
             _save_best_kernels(m, model_name)
 
         epochs += 1
