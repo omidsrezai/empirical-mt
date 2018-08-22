@@ -87,7 +87,7 @@ class MTMSTSeqTracker(ALOV300ModelBase):
 
             tf.summary.histogram('mst_activity', mst_activity)
 
-        with tf.variable_scope('pool_over_time'):
+        with tf.variable_scope('time_averaged'):
             time_pooled = tf.reduce_mean(mst_activity, axis=1)
             time_pooled = tf.layers.batch_normalization(time_pooled)
 
