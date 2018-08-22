@@ -96,7 +96,7 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              tf.norm(time_averaged, ord=2, axis=3, keep_dims=True),
                              max_outputs=self.max_im_outputs)
 
-        dense2 = dense(time_averaged,
+        dense2 = dense(tf.layers.flatten(time_averaged),
                        units=128,
                        name='dense64',
                        act=tf.nn.elu,
