@@ -256,7 +256,7 @@ def chann_reg_conv2d(x, kernel_size, filters,
             with tf.name_scope('visualize_selected_kernels'):
                 for i in range(filters):
                     weights = kernel_pooled[:, i]
-                    selected_in_kernel = kernel[:, :, tf.argmin(weights), i]
+                    selected_in_kernel = kernel[:, :, tf.argmax(weights), i]
 
                     normed = tf.abs(selected_in_kernel)
                     normed = (normed - tf.reduce_min(normed)) / \
