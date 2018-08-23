@@ -105,7 +105,7 @@ def time_map(x_timesteps, f, name):
     return y_timesteps
 
 
-def chann_sel_15_by_15_conv2d(x, n_chann, k_constraint, l2_reg_scale=0., dp=0., impl=2, kernel_summary=False):
+def chann_sel_15_by_15_conv2d(x, n_chann, k_constraint, l2_reg_scale=0., dp=0., impl=1, kernel_summary=False):
     if impl == 0:
         with tf.variable_scope('chann_sel_conv2d'):
             conv2d = SelConv2d(n_chann,
@@ -222,10 +222,10 @@ def chann_reg_conv2d(x, kernel_size, filters,
         #kernel_in_gate = tf.exp(tf.div(kernel_pooled_centered, 0.09))
 
         # kernel_pooled = _compute_conv_kernel_gradient_norm(kernel)
-        # kernel_pooled = tf.reduce_sum(tf.abs(kernel), axis=(0, 1))
-        # kernel_pooled_centered = (kernel_pooled - tf.reduce_min(kernel_pooled, axis=0)) / (tf.reduce_max(kernel_pooled) - tf.reduce_min(kernel_pooled))
-        kernel_pooled = 1 - tf.eye(filters)
-        kernel_pooled_centered = kernel_pooled
+        kernel_pooled = tf.reduce_sum(tf.square(kernel), axis=(0, 1))
+        kernel_pooled_centered = tf.divide(kernel_pooled - tf.reduce_min(kernel_pooled, axis=0),
+                                           (tf.reduce_max(kernel_pooled) - tf.reduce_min(kernel_pooled)))
+        kernel_pooled_centered = 1 - kernel_pooled_centered
         kernel_in_gate = tf.exp(-tf.div(tf.square(kernel_pooled_centered), 0.01))
         #kernel_in_gate = tf.nn.softmax(1 - kernel_pooled_centered, axis=0)
 
