@@ -223,9 +223,8 @@ def chann_reg_conv2d(x, kernel_size, filters,
 
         # kernel_pooled = _compute_conv_kernel_gradient_norm(kernel)
         kernel_pooled = tf.reduce_sum(tf.square(kernel), axis=(0, 1))
-        kernel_pooled_centered = tf.divide(kernel_pooled - tf.reduce_min(kernel_pooled, axis=0),
-                                           (tf.reduce_max(kernel_pooled) - tf.reduce_min(kernel_pooled)))
-        kernel_pooled_centered = 1 - kernel_pooled_centered
+        kernel_pooled_centered = tf.divide(tf.reduce_max(kernel_pooled, axis=0) - kernel_pooled,
+                                           (tf.reduce_max(kernel_pooled, axis=0) - tf.reduce_min(kernel_pooled, axis=0)))
         kernel_in_gate = tf.exp(-tf.div(tf.square(kernel_pooled_centered), 0.01))
         #kernel_in_gate = tf.nn.softmax(1 - kernel_pooled_centered, axis=0)
 
