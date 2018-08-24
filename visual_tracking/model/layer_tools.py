@@ -105,7 +105,7 @@ def time_map(x_timesteps, f, name):
     return y_timesteps
 
 
-def chann_sel_15_by_15_conv2d(x, n_chann, k_constraint, l2_reg_scale=0., dp=0., impl=1, kernel_summary=False):
+def chann_sel_15_by_15_conv2d(x, n_chann, k_constraint, l2_reg_scale=0., dp=0., impl=2, kernel_summary=False):
     if impl == 0:
         with tf.variable_scope('chann_sel_conv2d'):
             conv2d = SelConv2d(n_chann,
