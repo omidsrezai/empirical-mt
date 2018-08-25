@@ -67,7 +67,7 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              attention_gains=self.mt_attention_gains,
                              conv_chann=24,
                              l2_reg_scale=0.,
-                             surround_l2_reg_scale=0.)  # was 1e-5
+                             surround_l2_reg_scale=1e-5)  # was 1e-5
 
             mt_activity = time_map((speed_inputs, speed_input_tents, direction_input),
                                    area_mt,
