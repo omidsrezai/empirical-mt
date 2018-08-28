@@ -67,7 +67,7 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              attention_gains=self.mt_attention_gains,
                              conv_chann=24,
                              l2_reg_scale=1e-5,
-                             surround_l2_reg_scale=0.)  # was 1e-5
+                             surround_l2_reg_scale=1e-5)  # was 1e-5
 
             mt_activity = time_map((speed_inputs, speed_input_tents, direction_input, saliencymaps),
                                    area_mt,
@@ -100,6 +100,7 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                        units=128,
                        name='dense64',
                        act=tf.nn.elu,
+                       kernel_l2_reg_scale=1e-5,
                        batch_norm=True)
 
         pbbox = dense(dense2,
