@@ -69,7 +69,7 @@ class MTMSTSeqTracker(ALOV300ModelBase):
                              l2_reg_scale=1e-5,
                              surround_l2_reg_scale=0.)  # was 1e-5
 
-            mt_activity = time_map((speed_inputs, speed_input_tents, direction_input),
+            mt_activity = time_map((speed_inputs, speed_input_tents, direction_input, saliencymaps),
                                    area_mt,
                                    name='area_mt')
 
