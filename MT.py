@@ -83,7 +83,8 @@ def sample_tuning_params(n_neurons, rf_centre_range=(-40,40), rf_rad_range=(5,20
 	B = np.squeeze(np.array(B))
 	'''
 	params = {'pref_dir': pref_dir, 'dir_width':dir_width, 'a_n':a_n, 'pref_sp':pref_sp, 'sp_width':sp_width, 'sp_offset':sp_offset, \
- 'pref_disp':pref_disp, 'disp_width':disp_width, 'disp_fq':disp_fq, 'disp_phase':disp_phase, 'Ap':Ap, 'Bp':Bp, 'Ag':Ag, 'Bg':Bg, 'max_rate': max_rate, 'back_rate':back_rate, 'A':A, 'B':B} 	
+ 'pref_disp':pref_disp, 'disp_width':disp_width, 'disp_fq':disp_fq, 'disp_phase':disp_phase, 'Ap':Ap, 'Bp':Bp, 'Ag':Ag, 'Bg':Bg, 'max_rate': max_rate, 'back_rate':back_rate, 'A':A, 'B':B,
+			  'n_chann': n_neurons}
 	return params
 
 '''
